@@ -20,7 +20,7 @@ import {
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { Tile } from './components/Tile';
 
-const SERVER_URL = 'https://kutlu101.onrender.com';
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'https://kutlu101.onrender.com';
 
 const Opponent: React.FC<{ position: string, name: string, tileCount: number, discard: string, isActive?: boolean }> = ({ position, name, tileCount: _tileCount, discard: _discard, isActive }) => {
   return (
@@ -81,6 +81,11 @@ export default function OnlineApp() {
       setGameFinishedInfo(info);
     });
 
+    newSocket.on('info', (msg: string) => {
+      // Show temporary info message (toast or alert)
+      alert(msg);
+    });
+
     newSocket.on('roomCreated', (roomId) => {
       setJoined(true);
     });
@@ -106,13 +111,13 @@ export default function OnlineApp() {
 
   useEffect(() => {
     if (!gameState || !gameState.turnStartTime) return;
-    
+
     const updateTimer = () => {
       const elapsed = Math.floor((Date.now() - gameState.turnStartTime) / 1000);
-      const remaining = Math.max(0, 30 - elapsed);
+      const remaining = Math.max(0, 120 - elapsed);
       setTimeLeft(remaining);
     };
-    
+
     updateTimer();
     const intervalId = setInterval(updateTimer, 500);
     return () => clearInterval(intervalId);
@@ -215,7 +220,7 @@ export default function OnlineApp() {
   const rightOpponent = gameState.players[rightId as keyof typeof gameState.players];
 
   const p1TileCount = me.rack.filter((s: RackSlot) => s.tile !== null).length;
-  const canDraw = gameState.currentPlayerId === myGamePlayerId && !gameState.hasDrawn && p1TileCount < 22;
+  const canDraw = gameState.currentPlayerId === myGamePlayerId && !gameState.hasDrawn && p1TileCount < 22 && gameState.deck.length > 0;
   const canDiscard = gameState.currentPlayerId === myGamePlayerId && (gameState.hasDrawn || p1TileCount >= 22);
 
   const handleDrawDeck = () => {
@@ -264,24 +269,36 @@ export default function OnlineApp() {
   };
 
   const handleAutoSort = () => {
+    // Sıra başkasındayken da ıstakayı sıralayabilir
     const sorted = autoSortSeries(me.rack);
     emitAction('UPDATE_RACK', { newRack: sorted });
   };
 
   const handleAutoSortPairs = () => {
+    // Sıra başkasındayken da ıstakayı sıralayabilir
     const sorted = autoSortPairs(me.rack);
     emitAction('UPDATE_RACK', { newRack: sorted });
   };
 
   const handleOpenHand = () => {
-    const points = calculateRackPoints(me.rack);
-    if (points.totalSeriesPoints >= 101 || points.totalPairs >= 5) {
-      const leftoverRack = me.rack.map((s: RackSlot) => {
-        const inBlock = points.validBlocks.flat().some(t => t.id === s.tile?.id);
-        return inBlock ? { ...s, tile: null } : s;
-      });
-      emitAction('OPEN_HAND', { melds: points.validBlocks, newRack: leftoverRack });
+    // Sıra sadece benimdeyken eli açabilirim
+    if (gameState.currentPlayerId !== myGamePlayerId) {
+      alert('Sıra sizde değilken eli açamazsınız!');
+      return;
     }
+
+    // Zaten açılmışsa tekrar açmaya izin ver (kalan taşları masaya eklemek için)
+    const points = calculateRackPoints(me.rack);
+    if (points.validBlocks.length === 0) {
+      alert('Açılacak uygun grup bulunamadı!');
+      return;
+    }
+
+    const leftoverRack = me.rack.map((s: RackSlot) => {
+      const inBlock = points.validBlocks.flat().some(t => t.id === s.tile?.id);
+      return inBlock ? { ...s, tile: null } : s;
+    });
+    emitAction('OPEN_HAND', { melds: points.validBlocks, newRack: leftoverRack });
   };
 
   const topDiscardPile = gameState.discardPiles[topId] || [];
@@ -292,6 +309,39 @@ export default function OnlineApp() {
   const leftDiscard = leftDiscardPile[leftDiscardPile.length - 1];
   const rightDiscard = rightDiscardPile[rightDiscardPile.length - 1];
 
+  // All discarded tiles from all players, sorted by most recent
+  const allDiscards: Array<{ tile: TileData, player: string, playerName: string, timestamp: number }> = [];
+
+  // Helper to add discards with simulated timestamps (based on pile position)
+  const addDiscardsFromPile = (pile: TileData[], playerId: string, playerName: string, baseTimestamp: number) => {
+    pile.forEach((tile, index) => {
+      // More recent tiles have higher timestamps
+      allDiscards.push({
+        tile,
+        player: playerId,
+        playerName,
+        timestamp: baseTimestamp + index
+      });
+    });
+  };
+
+  // Get the most recent discard from all players
+  const getMostRecentDiscard = () => {
+    const myLast = (gameState.discardPiles[myGamePlayerId] || []).slice(-1)[0];
+    const topLast = topDiscardPile.slice(-1)[0];
+    const leftLast = leftDiscardPile.slice(-1)[0];
+    const rightLast = rightDiscardPile.slice(-1)[0];
+
+    // Return the most recent one with player info
+    if (myLast) return { tile: myLast, player: me.name };
+    if (topLast) return { tile: topLast, player: topOpponent.name };
+    if (leftLast) return { tile: leftLast, player: leftOpponent.name };
+    if (rightLast) return { tile: rightLast, player: rightOpponent.name };
+    return null;
+  };
+
+  const mostRecentDiscard = getMostRecentDiscard();
+
   const handleVote = (vote: 'yes' | 'no') => {
     if (!socket || !roomId) return;
     setMyVote(vote);
@@ -299,6 +349,12 @@ export default function OnlineApp() {
   };
 
   const handleStartVote = () => {
+    console.log('handleStartVote called', { socket: !!socket, roomId });
+    if (!socket || !roomId) {
+      alert('Oylama başlatılamadı: Bağlantı hatası veya oda bulunamadı.');
+      return;
+    }
+    console.log('Emitting START_VOTE');
     emitAction('START_VOTE');
   };
 
@@ -412,28 +468,107 @@ export default function OnlineApp() {
           })}
         </div>
 
-        {/* Voting Button (Bottom Right) */}
-        <div style={{ position: 'absolute', bottom: '20px', right: '20px', zIndex: 100 }}>
-          <button 
-            onClick={handleStartVote}
-            style={{ 
-              background: 'linear-gradient(135deg, #f44336, #d32f2f)', 
-              color: 'white', 
-              padding: '12px 24px', 
-              borderRadius: '8px', 
-              cursor: 'pointer',
-              border: 'none',
-              fontWeight: 'bold',
-              fontSize: '16px',
-              boxShadow: '0 4px 15px rgba(244, 67, 54, 0.4)',
-              transition: 'transform 0.2s'
-            }}
-            onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-            onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
-          >
-            🛑 Oyunu Sonlandırmayı Oyla
-          </button>
+        {/* All Discards Panel (Bottom Left) - Shows last discard overlapping */}
+        <div style={{
+          position: 'absolute',
+          bottom: '20px',
+          left: '20px',
+          zIndex: 1000,
+          pointerEvents: 'none'
+        }}>
+          {/* Show recent discards from all players, overlapping */}
+          {myGamePlayerId && (gameState.discardPiles[myGamePlayerId] || []).slice(-3).length > 0 && (
+            <div style={{ position: 'relative', width: '60px', height: '90px' }}>
+              {(gameState.discardPiles[myGamePlayerId] || []).slice(-3).map((tile, i) => (
+                <div key={i} style={{
+                  position: 'absolute',
+                  bottom: `${i * 12}px`,
+                  left: `${i * 8}px`,
+                  transform: 'scale(0.9)',
+                  zIndex: i
+                }}>
+                  <Tile tile={tile} />
+                </div>
+              ))}
+            </div>
+          )}
+          {topDiscardPile.slice(-3).length > 0 && (
+            <div style={{ position: 'relative', width: '60px', height: '90px', marginTop: '8px' }}>
+              {topDiscardPile.slice(-3).map((tile, i) => (
+                <div key={i} style={{
+                  position: 'absolute',
+                  bottom: `${i * 12}px`,
+                  left: `${i * 8}px`,
+                  transform: 'scale(0.9)',
+                  zIndex: i
+                }}>
+                  <Tile tile={tile} />
+                </div>
+              ))}
+            </div>
+          )}
+          {leftDiscardPile.slice(-3).length > 0 && (
+            <div style={{ position: 'relative', width: '60px', height: '90px', marginTop: '8px' }}>
+              {leftDiscardPile.slice(-3).map((tile, i) => (
+                <div key={i} style={{
+                  position: 'absolute',
+                  bottom: `${i * 12}px`,
+                  left: `${i * 8}px`,
+                  transform: 'scale(0.9)',
+                  zIndex: i
+                }}>
+                  <Tile tile={tile} />
+                </div>
+              ))}
+            </div>
+          )}
+          {rightDiscardPile.slice(-3).length > 0 && (
+            <div style={{ position: 'relative', width: '60px', height: '90px', marginTop: '8px' }}>
+              {rightDiscardPile.slice(-3).map((tile, i) => (
+                <div key={i} style={{
+                  position: 'absolute',
+                  bottom: `${i * 12}px`,
+                  left: `${i * 8}px`,
+                  transform: 'scale(0.9)',
+                  zIndex: i
+                }}>
+                  <Tile tile={tile} />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+
+        {/* Voting Button (Bottom Right) - Only show with 2+ real players */}
+        {roomPlayers.filter(p => !p.isBot).length >= 2 && gameState && (
+          <div style={{ position: 'absolute', bottom: '20px', right: '20px', zIndex: 1000, pointerEvents: 'auto' }}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                console.log('Button clicked!');
+                handleStartVote();
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #f44336, #d32f2f)',
+                color: 'white',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                border: 'none',
+                fontWeight: '600',
+                fontSize: '11px',
+                boxShadow: '0 2px 8px rgba(244, 67, 54, 0.3)',
+                transition: 'transform 0.2s',
+                whiteSpace: 'nowrap',
+                pointerEvents: 'auto'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+              onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              🛑 Sonlandır
+            </button>
+          </div>
+        )}
 
         {gameState.currentPlayerId !== myGamePlayerId && (
           <div className="turn-overlay">Rakiplerin Hamlesi Bekleniyor...</div>
@@ -511,7 +646,7 @@ export default function OnlineApp() {
           </div>
 
           <div className="rack-and-open">
-            {(gameState.hasOpenedHand[myGamePlayerId] ? calculateRackPoints(me.rack).validBlocks.length > 0 : (calculateRackPoints(me.rack).totalSeriesPoints >= 101 || calculateRackPoints(me.rack).totalPairs >= 5)) && (
+            {gameState.currentPlayerId === myGamePlayerId && calculateRackPoints(me.rack).validBlocks.length > 0 && (
               <button className="open-hand-btn" onClick={handleOpenHand}>ELİ AÇ</button>
             )}
             <Rack slots={me.rack} />

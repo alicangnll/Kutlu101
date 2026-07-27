@@ -1,0 +1,39 @@
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: kutlu101-server
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3001}:3001"
+    environment:
+      - PORT=${PORT:-3001}
+      - NODE_ENV=${NODE_ENV:-production}
+    env_file:
+      - .env
+    networks:
+      - kutlu101-network
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_SERVER_URL=${VITE_SERVER_URL:-http://localhost:3001}
+    container_name: kutlu101-client
+    restart: unless-stopped
+    ports:
+      - "${CLIENT_PORT:-80}:80"
+    depends_on:
+      - server
+    environment:
+      - VITE_SERVER_URL=${VITE_SERVER_URL:-http://localhost:3001}
+    env_file:
+      - .env
+    networks:
+      - kutlu101-network
+
+networks:
+  kutlu101-network:
+    driver: bridge

@@ -81,11 +81,13 @@ function calculateEndRoundScores(state: GameState, winner: string | null, okeyFi
 function startTurnTimer(roomId: string) {
   const room = rooms[roomId];
   if (!room || !room.gameState) return;
-  
+
   if (room.turnTimer) clearTimeout(room.turnTimer);
 
   const state = room.gameState;
   state.turnStartTime = Date.now();
+
+  console.log(`[${new Date().toISOString()}] Timer started: room=${roomId}, player=${state.currentPlayerId}, hasDrawn=${state.hasDrawn}`);
 
   room.turnTimer = setTimeout(() => {
     const r = rooms[roomId];
@@ -100,12 +102,14 @@ function startTurnTimer(roomId: string) {
     // Auto-draw if hasn't drawn
     if (!s.hasDrawn) {
       const tileCount = s.players[currentId].rack.filter((sl: any) => sl.tile !== null).length;
+      // If deck has tiles, draw first
       if (tileCount < 22 && s.deck.length > 0) {
         const drawnTile = s.deck.pop()!;
         const emptyIdx = s.players[currentId].rack.findIndex((sl: any) => sl.tile === null);
         if (emptyIdx !== -1) s.players[currentId].rack[emptyIdx].tile = drawnTile;
         s.hasDrawn = true;
       }
+      // If deck is empty or already has 22 tiles, player can discard directly
     }
 
     // Auto-discard random tile
@@ -143,7 +147,7 @@ function startTurnTimer(roomId: string) {
     } else {
       startTurnTimer(roomId);
     }
-  }, 30000); // 30 seconds
+  }, 120000); // 120 seconds (2 minutes)
 }
 
 function broadcastState(roomId: string) {
@@ -179,9 +183,25 @@ function scheduleBotTurn(roomId: string) {
     
     if (currentTileCount < 22) {
       if (s.deck.length === 0) {
-        calculateEndRoundScores(s, null, false);
+        // Deck empty - start next round without penalty
+        console.log(`[${new Date().toISOString()}] Deck empty (bot turn), starting next round`);
+
+        const existingScores: Record<string, number> = {};
+        for (const pid in s.players) {
+          existingScores[pid] = s.players[pid].score;
+        }
+
+        r.gameState = initializeGame(1, existingScores);
+        r.gameState.turnStartTime = Date.now();
         broadcastState(roomId);
-        io.to(roomId).emit('gameFinished', { winner: null, reason: 'deck_empty' });
+        io.to(roomId).emit('info', 'Deste bitti! Yeni el başlıyor...');
+
+        const nextPlayer = r.players.find(p => p.gamePlayerId === r.gameState!.currentPlayerId);
+        if (nextPlayer?.isBot) {
+          scheduleBotTurn(roomId);
+        } else {
+          startTurnTimer(roomId);
+        }
         return;
       }
       const drawnTile = s.deck.pop()!;
@@ -359,8 +379,26 @@ io.on('connection', (socket: Socket) => {
       const idx = room.players.findIndex(p => p.socketId === socket.id);
       if (idx !== -1) {
         room.players.splice(idx, 1);
-        if (room.players.filter(p => !p.isBot).length === 0) {
-          // Clear bot timers and turn timer, delete room
+
+        const realPlayersCount = room.players.filter(p => !p.isBot).length;
+
+        if (realPlayersCount === 0 && room.gameState) {
+          // Last real player disconnected - end the game
+          console.log(`[${new Date().toISOString()}] Last real player disconnected, ending game in room ${roomId}`);
+          room.botTimers.forEach(t => clearTimeout(t));
+          if (room.turnTimer) clearTimeout(room.turnTimer);
+          if (room.voteTimer) clearTimeout(room.voteTimer);
+
+          // Send game finished event before deleting
+          io.to(roomId).emit('gameFinished', {
+            winner: null,
+            reason: 'player_disconnected',
+            isGameEnded: true
+          });
+
+          delete rooms[roomId];
+        } else if (realPlayersCount === 0) {
+          // Game not started, just delete the room
           room.botTimers.forEach(t => clearTimeout(t));
           if (room.turnTimer) clearTimeout(room.turnTimer);
           if (room.voteTimer) clearTimeout(room.voteTimer);
@@ -379,10 +417,18 @@ io.on('connection', (socket: Socket) => {
   });
 
   socket.on('action', ({ roomId, action, payload }) => {
+    console.log(`[${new Date().toISOString()}] Action received: ${action}, room: ${roomId}, socket: ${socket.id}`);
+
     const room = rooms[roomId];
-    if (!room || !room.gameState) return;
+    if (!room || !room.gameState) {
+      console.log(`[${new Date().toISOString()}] Action rejected: room or gameState missing. room: ${!!room}, gameState: ${!!room?.gameState}`);
+      return;
+    }
     const player = room.players.find(p => p.socketId === socket.id);
-    if (!player) return;
+    if (!player) {
+      console.log(`[${new Date().toISOString()}] Action rejected: player not found`);
+      return;
+    }
 
     const state = room.gameState;
     const myId = player.gamePlayerId;
@@ -392,9 +438,29 @@ io.on('connection', (socket: Socket) => {
       const currentTileCount = state.players[myId].rack.filter((s: any) => s.tile !== null).length;
       if (currentTileCount >= 22) return; // 22 taşı varsa çekemez
       if (state.deck.length === 0) {
-        const isGameEnded = calculateEndRoundScores(state, null, false, room.settings);
+        // Deck empty - start next round without penalty
+        console.log(`[${new Date().toISOString()}] Deck empty in room ${roomId}, starting next round`);
+
+        // Preserve current scores
+        const existingScores: Record<string, number> = {};
+        for (const pid in state.players) {
+          existingScores[pid] = state.players[pid].score;
+        }
+
+        // Start new round with preserved scores
+        room.gameState = initializeGame(1, existingScores);
+        room.gameState.turnStartTime = Date.now();
         broadcastState(roomId);
-        io.to(roomId).emit('gameFinished', { winner: null, reason: 'deck_empty', isGameEnded });
+
+        // Notify players
+        io.to(roomId).emit('info', 'Deste bitti! Yeni el başlıyor...');
+
+        const nextPlayer = room.players.find(p => p.gamePlayerId === room.gameState!.currentPlayerId);
+        if (nextPlayer?.isBot) {
+          scheduleBotTurn(roomId);
+        } else {
+          startTurnTimer(roomId);
+        }
         return;
       }
       const drawnTile = state.deck.pop();
@@ -462,22 +528,22 @@ io.on('connection', (socket: Socket) => {
       broadcastState(roomId);
     } else if (action === 'START_VOTE') {
       if (room.voteActive) return; // Already voting
-      room.voteActive = true;
-      room.votes = {};
-      room.votes[myId] = true; // Starter automatically votes Yes
-      
+
       const realPlayersCount = room.players.filter(p => !p.isBot).length;
       if (realPlayersCount <= 1) {
         socket.emit('error', 'Oylama başlatmak için en az 2 gerçek oyuncu olmalı!');
-        room.voteActive = false;
         return;
       }
-      
+
+      room.voteActive = true;
+      room.votes = {};
+      room.votes[myId] = true; // Starter automatically votes Yes
+
       io.to(roomId).emit('voteStarted', { starterId: myId });
-      
+
       room.voteTimer = setTimeout(() => {
         finalizeVote(roomId);
-      }, 30000);
+      }, 30000); // 30 seconds for voting
     } else if (action === 'CAST_VOTE') {
       if (!room.voteActive) return;
       if (room.votes[myId] !== undefined) return; // Already voted
@@ -512,26 +578,30 @@ function finalizeVote(roomId: string) {
   const room = rooms[roomId];
   if (!room) return;
   room.voteActive = false;
-  
+
   const realPlayers = room.players.filter(p => !p.isBot);
   let yesVotes = 0;
   let noVotes = 0;
-  
+
   for (const p of realPlayers) {
     if (room.votes[p.gamePlayerId] === true) yesVotes++;
-    else noVotes++; // Non-voters are treated as NO
+    else noVotes++; // Non-voters and NO votes are treated as NO
   }
-  
+
   io.to(roomId).emit('voteFinished', { yesVotes, noVotes });
-  
-  if (yesVotes > noVotes) {
-    // End game
+
+  // Majority means more than 50% of real players voted YES
+  const requiredVotes = Math.floor(realPlayers.length / 2) + 1;
+
+  if (yesVotes >= requiredVotes) {
+    // End game - majority voted YES
     if (room.gameState) {
       calculateEndRoundScores(room.gameState, null, false, room.settings);
       broadcastState(roomId);
       io.to(roomId).emit('gameFinished', { winner: null, reason: 'vote_ended', isGameEnded: true });
     }
   }
+  // If majority voted NO, game continues (no action needed)
 }
 
 const PORT = process.env.PORT || 3001;

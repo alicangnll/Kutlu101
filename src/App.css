@@ -353,24 +353,38 @@
 
 /* Turn System Styles */
 .not-my-turn {
-  opacity: 0.8;
-  pointer-events: none; /* Disable interaction when it's not player's turn */
+  opacity: 0.9;
+}
+
+/* Disable specific actions when not player's turn */
+.not-my-turn .deck-placeholder,
+.not-my-turn .discard-area,
+.not-my-turn .open-hand-btn {
+  pointer-events: none;
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Sıralama butonları her zaman aktif (ıstakayı düzenlemek için) */
+.not-my-turn .side-action-btn {
+  pointer-events: auto !important;
+  opacity: 1 !important;
+  cursor: pointer !important;
 }
 
 .turn-overlay {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  top: 20px;
+  right: 20px;
   background: rgba(0, 0, 0, 0.85);
   color: #ffeb3b;
-  padding: 16px 32px;
-  border-radius: 30px;
-  font-size: 24px;
+  padding: 12px 24px;
+  border-radius: 20px;
+  font-size: 16px;
   font-weight: bold;
   z-index: 100;
   border: 2px solid #fbc02d;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.6);
   pointer-events: none;
 }
 
