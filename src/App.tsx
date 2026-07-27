@@ -172,6 +172,8 @@ function App() {
         };
       });
 
+      // Bot daha uzun süre düşünür (2-3 saniye rastgele)
+      const thinkTime = Math.floor(Math.random() * 1500) + 2000;
       setTimeout(() => {
         let discardedTileInfo: any = null;
         setGameState((prev) => {
@@ -249,8 +251,8 @@ function App() {
             handleEndRound(discardedTileInfo.botId, discardedTileInfo.finishedWithOkey);
           }
         }
-      }, 1000); 
-    }, 1000); 
+      }, thinkTime);
+    }, 1500); // Taş çektikten sonra 1.5 saniye bekle 
 
     return () => clearTimeout(drawTimer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
