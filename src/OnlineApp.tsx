@@ -136,6 +136,23 @@ export default function OnlineApp() {
     return () => clearInterval(intervalId);
   }, [gameState?.turnStartTime, gameState?.currentPlayerId]);
 
+  // Zaman aşımı: 0 saniye kaldığında otomatik taş at
+  useEffect(() => {
+    if (timeLeft === 0 && gameState?.currentPlayerId === myGamePlayerId && !gameState.isRoundOver) {
+      // Otomatik olarak rastgele bir taş at
+      const myPlayer = gameState.players[myGamePlayerId as keyof typeof gameState.players];
+      if (myPlayer) {
+        const tilesWithSlot = myPlayer.rack.map((slot, idx) => ({ slot, idx })).filter(s => s.slot.tile !== null);
+        if (tilesWithSlot.length > 0) {
+          // Rastgele bir taş seç ve at
+          const randomChoice = tilesWithSlot[Math.floor(Math.random() * tilesWithSlot.length)];
+          emitAction('discard', { tileId: randomChoice.slot.tile!.id });
+          showToast('Süre doldu! Otomatik taş atıldı.', 'warning');
+        }
+      }
+    }
+  }, [timeLeft, gameState?.currentPlayerId, gameState?.players, gameState?.isRoundOver]);
+
   useEffect(() => {
     if (!voteState?.active || !voteState.startTime) return;
     
