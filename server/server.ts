@@ -5,6 +5,7 @@ import cors from 'cors';
 import { initializeGame } from './utils/gameLogic';
 import { GameState, RoomSettings } from './types';
 import { playBotLogic, getBotDiscardDecision } from './utils/botAI';
+import { isTilePlayable } from './utils/ruleEngine';
 
 const app = express();
 app.use(cors());
@@ -271,6 +272,17 @@ function scheduleBotTurn(roomId: string) {
     const discardIdx = s.players[currentId].rack.findIndex((sl: any) => sl.tile?.id === discardTile.id);
     if (discardIdx !== -1) s.players[currentId].rack[discardIdx].tile = null;
 
+    // İşlek atma cezası kontrolü (ayara göre)
+    if (room.settings.islekCezasi && isTilePlayable(s.tableMelds, discardTile)) {
+      s.scores[currentId] += 101;
+      io.to(roomId).emit('penalty', { playerId: currentId, penalty: 101, reason: `${currentState.players.find((p: any) => p.id === currentId)?.name || 'Bot'} İşlek Attı!` });
+    }
+    // Yere Okey atma cezası (ayara göre)
+    if (room.settings.okeyCezasi && discardTile.isOkey) {
+      s.scores[currentId] += 101;
+      io.to(roomId).emit('penalty', { playerId: currentId, penalty: 101, reason: `${currentState.players.find((p: any) => p.id === currentId)?.name || 'Bot'} Okey Attı!` });
+    }
+
     if (!s.discardPiles[currentId]) s.discardPiles[currentId] = [];
     s.discardPiles[currentId].push(discardTile);
 
@@ -535,6 +547,18 @@ io.on('connection', (socket: Socket) => {
       if (sourceIndex === -1) return;
       const discardedTile = state.players[myId].rack[sourceIndex].tile!;
       state.players[myId].rack[sourceIndex].tile = null;
+
+      // İşlek atma cezası kontrolü (ayara göre)
+      if (room.settings.islekCezasi && isTilePlayable(state.tableMelds, discardedTile)) {
+        state.scores[myId] += 101;
+        io.to(roomId).emit('penalty', { playerId: myId, penalty: 101, reason: 'İşlek Attı!' });
+      }
+      // Yere Okey atma cezası (ayara göre)
+      if (room.settings.okeyCezasi && discardedTile.isOkey) {
+        state.scores[myId] += 101;
+        io.to(roomId).emit('penalty', { playerId: myId, penalty: 101, reason: 'Okey Attı!' });
+      }
+
       const remainingTiles = state.players[myId].rack.filter((s: any) => s.tile !== null).length;
       if (remainingTiles === 0) {
         const isGameEnded = calculateEndRoundScores(state, myId, discardedTile.isOkey, room.settings);

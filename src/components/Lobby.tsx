@@ -15,8 +15,8 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, onCreate, error }) => {
   
   const [isKatlamali, setIsKatlamali] = useState(false);
   const [maxScore, setMaxScore] = useState(800);
-  const [islekCezasi, setIslekCezasi] = useState(false);
-  const [okeyCezasi, setOkeyCezasi] = useState(false);
+  const [islekCezasi, setIslekCezasi] = useState(true);  // Klasik 101 Okey: varsayılan açık
+  const [okeyCezasi, setOkeyCezasi] = useState(true);    // Klasik 101 Okey: varsayılan açık
   
   const [isInvite, setIsInvite] = useState(false);
 

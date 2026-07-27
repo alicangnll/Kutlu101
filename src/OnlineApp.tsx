@@ -46,6 +46,7 @@ export default function OnlineApp() {
   const [myGamePlayerId, setMyGamePlayerId] = useState<string | null>(null);
   const [activeTile, setActiveTile] = useState<TileData | null>(null);
   const [gameFinishedInfo, setGameFinishedInfo] = useState<{winner: string | null, okeyFinish?: boolean, reason?: string, isGameEnded?: boolean} | null>(null);
+  const [roomSettings, setRoomSettings] = useState<{isKatlamali: boolean, maxScore: number, islekCezasi: boolean, okeyCezasi: boolean}>({isKatlamali: false, maxScore: 800, islekCezasi: true, okeyCezasi: true});
   
   const [timeLeft, setTimeLeft] = useState(30);
   const [voteState, setVoteState] = useState<{active: boolean, yes: number, no: number, startTime: number} | null>(null);
@@ -106,6 +107,11 @@ export default function OnlineApp() {
 
     newSocket.on('voteUpdated', (data) => {
       setVoteState(prev => prev ? { ...prev, yes: data.yesVotes, no: data.noVotes } : null);
+    });
+
+    newSocket.on('penalty', (data: { playerId: string, penalty: number, reason: string }) => {
+      const playerName = gameState?.players[data.playerId as keyof typeof gameState.players]?.name || 'Bir oyuncu';
+      showToast(`${playerName}: ${data.reason} +${data.penalty}`, 'error');
     });
 
     newSocket.on('voteFinished', (data) => {
@@ -179,6 +185,7 @@ export default function OnlineApp() {
     if (!socket) return;
     setUsername(uname);
     setRoomId(room);
+    setRoomSettings(settings);
     socket.emit('createRoom', { username: uname, roomId: room, settings });
   };
 
@@ -650,12 +657,23 @@ export default function OnlineApp() {
           </div>
 
           <div className="point-indicator">
-            <div className={`point-badge ${gameState.hasOpenedHand[myGamePlayerId] || calculateRackPoints(me.rack).totalSeriesPoints >= 101 ? 'valid' : 'invalid'}`}>
-              SERİ: {calculateRackPoints(me.rack).totalSeriesPoints} / {gameState.hasOpenedHand[myGamePlayerId] ? 'AÇIK' : '101'}
-            </div>
-            <div className={`point-badge ${gameState.hasOpenedHand[myGamePlayerId] || calculateRackPoints(me.rack).totalPairs >= 5 ? 'valid' : 'invalid'}`}>
-              ÇİFT: {calculateRackPoints(me.rack).totalPairs} / {gameState.hasOpenedHand[myGamePlayerId] ? 'AÇIK' : '5'}
-            </div>
+            {(() => {
+              const pointsInfo = calculateRackPoints(me.rack);
+              const targetSeries = roomSettings.isKatlamali ? gameState.highestSeriesPoint + 1 : 101;
+              const targetPairs = roomSettings.isKatlamali ? gameState.highestPairsPoint + 1 : 5;
+              const canOpenSeries = pointsInfo.totalSeriesPoints >= targetSeries;
+              const canOpenPairs = pointsInfo.totalPairs >= targetPairs;
+              return (
+                <>
+                  <div className={`point-badge ${gameState.hasOpenedHand[myGamePlayerId] || canOpenSeries ? 'valid' : 'invalid'}`}>
+                    SERİ: {pointsInfo.totalSeriesPoints} / {gameState.hasOpenedHand[myGamePlayerId] ? 'AÇIK' : targetSeries}
+                  </div>
+                  <div className={`point-badge ${gameState.hasOpenedHand[myGamePlayerId] || canOpenPairs ? 'valid' : 'invalid'}`}>
+                    ÇİFT: {pointsInfo.totalPairs} / {gameState.hasOpenedHand[myGamePlayerId] ? 'AÇIK' : targetPairs}
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
           <div className="side-action-btn" onClick={handleAutoSortPairs} style={{ opacity: isSorting ? 0.5 : 1, cursor: isSorting ? 'wait' : 'pointer' }}>
@@ -664,9 +682,29 @@ export default function OnlineApp() {
           </div>
 
           <div className="rack-and-open">
-            {gameState.currentPlayerId === myGamePlayerId && calculateRackPoints(me.rack).validBlocks.length > 0 && (
-              <button className="open-hand-btn" onClick={handleOpenHand}>ELİ AÇ</button>
-            )}
+            {(() => {
+              const pointsInfo = calculateRackPoints(me.rack);
+              const targetSeries = roomSettings.isKatlamali ? gameState.highestSeriesPoint + 1 : 101;
+              const targetPairs = roomSettings.isKatlamali ? gameState.highestPairsPoint + 1 : 5;
+              const canOpen = gameState.hasOpenedHand[myGamePlayerId]
+                ? pointsInfo.validBlocks.length > 0
+                : (pointsInfo.totalSeriesPoints >= targetSeries || pointsInfo.totalPairs >= targetPairs);
+
+              // Debug log
+              console.log('🐛 Online ELİ AÇ Debug:', {
+                seri: pointsInfo.totalSeriesPoints,
+                cift: pointsInfo.totalPairs,
+                targetSeries,
+                targetPairs,
+                isKatlamali: roomSettings.isKatlamali,
+                highestSeriesPoint: gameState.highestSeriesPoint,
+                highestPairsPoint: gameState.highestPairsPoint,
+                hasOpened: gameState.hasOpenedHand[myGamePlayerId],
+                canOpen
+              });
+
+              return canOpen ? <button className="open-hand-btn" onClick={handleOpenHand}>ELİ AÇ</button> : null;
+            })()}
             <Rack slots={me.rack} />
           </div>
 

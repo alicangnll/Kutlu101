@@ -318,9 +318,10 @@ function App() {
       }
 
       let islekPenaltyInfo: string | null = null;
+      let okeyPenaltyInfo: string | null = null;
       let isFinished = false;
       let finishedWithOkey = false;
-      
+
       setGameState((prev) => {
         if (!prev) return prev;
         const newRack = prev.players.player1.rack.map(s => ({ ...s }));
@@ -330,6 +331,10 @@ function App() {
         const discardedTile = newRack[sourceIndex].tile!;
         if (isTilePlayable(prev.tableMelds, discardedTile)) {
            islekPenaltyInfo = "İşlek Attınız! +101 Ceza";
+        }
+        // Yere Okey atma cezası (ayrı ceza)
+        if (discardedTile.isOkey) {
+           okeyPenaltyInfo = "Okey Attınız! +101 Ceza";
         }
         newRack[sourceIndex].tile = null;
         const remainingTiles = newRack.filter(s => s.tile !== null).length;
@@ -350,8 +355,9 @@ function App() {
           hasDrawn: false
         };
       });
-      
+
       if (islekPenaltyInfo) applyPenalty('player1', 101, islekPenaltyInfo);
+      if (okeyPenaltyInfo) applyPenalty('player1', 101, okeyPenaltyInfo);
       
       if (isFinished) {
         handleEndRound('player1', finishedWithOkey);
@@ -697,12 +703,23 @@ function App() {
           </div>
           
           <div className="point-indicator">
-            <div className={`point-badge ${gameState.hasOpenedHand.player1 || calculateRackPoints(player1.rack).totalSeriesPoints >= (matchState.isKatlamali ? matchState.highestSeriesPoint + 1 : 101) ? 'valid' : 'invalid'}`}>
-              SERİ: {calculateRackPoints(player1.rack).totalSeriesPoints} / {gameState.hasOpenedHand.player1 ? 'AÇIK' : (matchState.isKatlamali ? matchState.highestSeriesPoint + 1 : 101)}
-            </div>
-            <div className={`point-badge ${gameState.hasOpenedHand.player1 || calculateRackPoints(player1.rack).totalPairs >= (matchState.isKatlamali ? matchState.highestPairsPoint + 1 : 5) ? 'valid' : 'invalid'}`}>
-              ÇİFT: {calculateRackPoints(player1.rack).totalPairs} / {gameState.hasOpenedHand.player1 ? 'AÇIK' : (matchState.isKatlamali ? matchState.highestPairsPoint + 1 : 5)}
-            </div>
+            {(() => {
+              const pointsInfo = calculateRackPoints(player1.rack);
+              const targetSeries = matchState.isKatlamali ? matchState.highestSeriesPoint + 1 : 101;
+              const targetPairs = matchState.isKatlamali ? matchState.highestPairsPoint + 1 : 5;
+              const canOpenSeries = pointsInfo.totalSeriesPoints >= targetSeries;
+              const canOpenPairs = pointsInfo.totalPairs >= targetPairs;
+              return (
+                <>
+                  <div className={`point-badge ${gameState.hasOpenedHand.player1 || canOpenSeries ? 'valid' : 'invalid'}`}>
+                    SERİ: {pointsInfo.totalSeriesPoints} / {gameState.hasOpenedHand.player1 ? 'AÇIK' : targetSeries}
+                  </div>
+                  <div className={`point-badge ${gameState.hasOpenedHand.player1 || canOpenPairs ? 'valid' : 'invalid'}`}>
+                    ÇİFT: {pointsInfo.totalPairs} / {gameState.hasOpenedHand.player1 ? 'AÇIK' : targetPairs}
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
           <div className="side-action-btn" onClick={handleAutoSortPairs}>
@@ -711,9 +728,27 @@ function App() {
           </div>
           
           <div className="rack-and-open">
-            {(gameState.hasOpenedHand.player1 ? calculateRackPoints(player1.rack).validBlocks.length > 0 : (calculateRackPoints(player1.rack).totalSeriesPoints >= (matchState.isKatlamali ? matchState.highestSeriesPoint + 1 : 101) || calculateRackPoints(player1.rack).totalPairs >= (matchState.isKatlamali ? matchState.highestPairsPoint + 1 : 5))) && (
-              <button className="open-hand-btn" onClick={handleOpenHand}>ELİ AÇ</button>
-            )}
+            {(() => {
+              const pointsInfo = calculateRackPoints(player1.rack);
+              const targetSeries = matchState.isKatlamali ? matchState.highestSeriesPoint + 1 : 101;
+              const targetPairs = matchState.isKatlamali ? matchState.highestPairsPoint + 1 : 5;
+              const canOpen = gameState.hasOpenedHand.player1
+                ? pointsInfo.validBlocks.length > 0
+                : (pointsInfo.totalSeriesPoints >= targetSeries || pointsInfo.totalPairs >= targetPairs);
+
+              // Debug log
+              console.log('🐛 ELİ AÇ Debug:', {
+                seri: pointsInfo.totalSeriesPoints,
+                cift: pointsInfo.totalPairs,
+                targetSeries,
+                targetPairs,
+                isKatlamali: matchState.isKatlamali,
+                hasOpened: gameState.hasOpenedHand.player1,
+                canOpen
+              });
+
+              return canOpen ? <button className="open-hand-btn" onClick={handleOpenHand}>ELİ AÇ</button> : null;
+            })()}
             <Rack slots={player1.rack} />
           </div>
 
