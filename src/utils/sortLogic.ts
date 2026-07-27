@@ -159,30 +159,30 @@ export const autoSortPairs = (rack: RackSlot[]): RackSlot[] => {
   const allTiles = rack.map(s => s.tile).filter((t): t is TileData => t !== null);
   if (allTiles.length === 0) return rack;
 
-  const pairs: TileData[][] = [];
-  const leftovers: TileData[] = [];
-  
-  // Create a map to find identical tiles (color + value)
-  const map = new Map<string, TileData[]>();
-  
+  // Group by value (same number, different colors can be pairs)
+  const valueGroups = new Map<number, TileData[]>();
+
   for (const t of allTiles) {
-    const key = `${t.color}-${t.value}-${t.isFalseOkey}`;
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(t);
+    if (!valueGroups.has(t.value)) valueGroups.set(t.value, []);
+    valueGroups.get(t.value)!.push(t);
   }
 
-  // Extract exactly pairs (2 of the same)
-  for (const [_key, tiles] of map.entries()) {
-    while (tiles.length >= 2) {
-      // Take 2 identical tiles to form a pair
-      const pair = [tiles.shift()!, tiles.shift()!];
-      pairs.push(pair);
-    }
-    // Any remaining (1 tile) goes to leftovers
-    leftovers.push(...tiles);
+  // Sort tiles within each value group by color for consistent display
+  const colorOrder = { 'red': 1, 'black': 2, 'blue': 3, 'yellow': 4 };
+  for (const [value, tiles] of valueGroups.entries()) {
+    tiles.sort((a, b) => {
+      // False okeys go to the end
+      if (a.isFalseOkey && !b.isFalseOkey) return 1;
+      if (!a.isFalseOkey && b.isFalseOkey) return -1;
+      // Sort by color
+      const colorA = colorOrder[a.color as keyof typeof colorOrder] || 5;
+      const colorB = colorOrder[b.color as keyof typeof colorOrder] || 5;
+      return colorA - colorB;
+    });
   }
 
-  // Layout the pairs onto the 32-slot rack
+  // Create pairs by placing tiles with same value next to each other
+  // Leave 1 empty space between different value groups
   const newSlots: RackSlot[] = [];
   const prefix = rack[0]?.id.split('-')[0] || 'p1';
 
@@ -192,30 +192,29 @@ export const autoSortPairs = (rack: RackSlot[]): RackSlot[] => {
 
   let currentIndex = 0;
 
-  for (const pair of pairs) {
-    if (currentIndex + pair.length > 32) {
-      leftovers.push(...pair);
+  // Sort value groups in ascending order (1-13)
+  const sortedValues = Array.from(valueGroups.keys()).sort((a, b) => a - b);
+
+  for (const value of sortedValues) {
+    const tiles = valueGroups.get(value)!;
+
+    if (currentIndex + tiles.length > 32) {
+      // Not enough space, put remaining tiles in empty slots at the end
+      for (const tile of tiles) {
+        const emptySlot = newSlots.find(s => s.tile === null);
+        if (emptySlot) emptySlot.tile = tile;
+      }
       continue;
     }
-    
-    newSlots[currentIndex].tile = pair[0];
-    currentIndex++;
-    newSlots[currentIndex].tile = pair[1];
-    currentIndex++;
-    
-    // 1 empty space between pairs
-    currentIndex++;
-  }
 
-  // Place leftovers
-  for (const tile of leftovers) {
-    if (currentIndex < 32) {
+    // Place all tiles with this value consecutively
+    for (const tile of tiles) {
       newSlots[currentIndex].tile = tile;
       currentIndex++;
-    } else {
-      const emptySlot = newSlots.find(s => s.tile === null);
-      if (emptySlot) emptySlot.tile = tile;
     }
+
+    // Leave 1 empty space between different value groups
+    currentIndex++;
   }
 
   return newSlots;

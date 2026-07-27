@@ -153,9 +153,11 @@ function startTurnTimer(roomId: string) {
 function broadcastState(roomId: string) {
   const room = rooms[roomId];
   if (!room || !room.gameState) return;
+  console.log(`[${new Date().toISOString()}] Broadcasting state for room ${roomId}, deckLength: ${room.gameState.deck.length}`);
   for (const player of room.players) {
     if (player.isBot) continue;
     const sanitized = sanitizeState(room.gameState, player.gamePlayerId);
+    console.log(`[${new Date().toISOString()}] Sending to ${player.username} (${player.gamePlayerId}), sanitized deckLength: ${sanitized.deck.length}`);
     io.to(player.socketId).emit('gameState', sanitized);
   }
 }
@@ -434,9 +436,16 @@ io.on('connection', (socket: Socket) => {
     const myId = player.gamePlayerId;
 
     if (action === 'DRAW_DECK') {
-      if (state.currentPlayerId !== myId || state.hasDrawn) return;
+      console.log(`[${new Date().toISOString()}] DRAW_DECK attempt - room: ${roomId}, player: ${myId}, deckLength: ${state.deck.length}, hasDrawn: ${state.hasDrawn}, currentTileCount: ${state.players[myId].rack.filter((s: any) => s.tile !== null).length}`);
+      if (state.currentPlayerId !== myId || state.hasDrawn) {
+        console.log(`[${new Date().toISOString()}] DRAW_DECK rejected - wrong player or already drawn`);
+        return;
+      }
       const currentTileCount = state.players[myId].rack.filter((s: any) => s.tile !== null).length;
-      if (currentTileCount >= 22) return; // 22 taşı varsa çekemez
+      if (currentTileCount >= 22) {
+        console.log(`[${new Date().toISOString()}] DRAW_DECK rejected - tileCount >= 22`);
+        return; // 22 taşı varsa çekemez
+      }
       if (state.deck.length === 0) {
         // Deck empty - start next round without penalty
         console.log(`[${new Date().toISOString()}] Deck empty in room ${roomId}, starting next round`);

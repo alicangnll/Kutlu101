@@ -51,6 +51,7 @@ export default function OnlineApp() {
   const [voteState, setVoteState] = useState<{active: boolean, yes: number, no: number, startTime: number} | null>(null);
   const [voteTimeLeft, setVoteTimeLeft] = useState(30);
   const [myVote, setMyVote] = useState<'yes' | 'no' | null>(null);
+  const [isSorting, setIsSorting] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -70,6 +71,7 @@ export default function OnlineApp() {
     });
 
     newSocket.on('gameState', (state: GameState) => {
+      console.log('[Client] Received gameState, deck.length:', state.deck.length);
       setGameState(state);
     });
 
@@ -220,7 +222,7 @@ export default function OnlineApp() {
   const rightOpponent = gameState.players[rightId as keyof typeof gameState.players];
 
   const p1TileCount = me.rack.filter((s: RackSlot) => s.tile !== null).length;
-  const canDraw = gameState.currentPlayerId === myGamePlayerId && !gameState.hasDrawn && p1TileCount < 22 && gameState.deck.length > 0;
+  const canDraw = gameState.currentPlayerId === myGamePlayerId && !gameState.hasDrawn && p1TileCount < 22; // Deck length removed - let server handle empty deck
   const canDiscard = gameState.currentPlayerId === myGamePlayerId && (gameState.hasDrawn || p1TileCount >= 22);
 
   const handleDrawDeck = () => {
@@ -269,15 +271,21 @@ export default function OnlineApp() {
   };
 
   const handleAutoSort = () => {
-    // Sıra başkasındayken da ıstakayı sıralayabilir
+    if (isSorting) return; // Prevent double clicks
+    setIsSorting(true);
     const sorted = autoSortSeries(me.rack);
     emitAction('UPDATE_RACK', { newRack: sorted });
+    // Reset after a short delay (server will send updated state)
+    setTimeout(() => setIsSorting(false), 500);
   };
 
   const handleAutoSortPairs = () => {
-    // Sıra başkasındayken da ıstakayı sıralayabilir
+    if (isSorting) return; // Prevent double clicks
+    setIsSorting(true);
     const sorted = autoSortPairs(me.rack);
     emitAction('UPDATE_RACK', { newRack: sorted });
+    // Reset after a short delay (server will send updated state)
+    setTimeout(() => setIsSorting(false), 500);
   };
 
   const handleOpenHand = () => {
@@ -308,39 +316,6 @@ export default function OnlineApp() {
   const topDiscard = topDiscardPile[topDiscardPile.length - 1];
   const leftDiscard = leftDiscardPile[leftDiscardPile.length - 1];
   const rightDiscard = rightDiscardPile[rightDiscardPile.length - 1];
-
-  // All discarded tiles from all players, sorted by most recent
-  const allDiscards: Array<{ tile: TileData, player: string, playerName: string, timestamp: number }> = [];
-
-  // Helper to add discards with simulated timestamps (based on pile position)
-  const addDiscardsFromPile = (pile: TileData[], playerId: string, playerName: string, baseTimestamp: number) => {
-    pile.forEach((tile, index) => {
-      // More recent tiles have higher timestamps
-      allDiscards.push({
-        tile,
-        player: playerId,
-        playerName,
-        timestamp: baseTimestamp + index
-      });
-    });
-  };
-
-  // Get the most recent discard from all players
-  const getMostRecentDiscard = () => {
-    const myLast = (gameState.discardPiles[myGamePlayerId] || []).slice(-1)[0];
-    const topLast = topDiscardPile.slice(-1)[0];
-    const leftLast = leftDiscardPile.slice(-1)[0];
-    const rightLast = rightDiscardPile.slice(-1)[0];
-
-    // Return the most recent one with player info
-    if (myLast) return { tile: myLast, player: me.name };
-    if (topLast) return { tile: topLast, player: topOpponent.name };
-    if (leftLast) return { tile: leftLast, player: leftOpponent.name };
-    if (rightLast) return { tile: rightLast, player: rightOpponent.name };
-    return null;
-  };
-
-  const mostRecentDiscard = getMostRecentDiscard();
 
   const handleVote = (vote: 'yes' | 'no') => {
     if (!socket || !roomId) return;
@@ -468,68 +443,23 @@ export default function OnlineApp() {
           })}
         </div>
 
-        {/* All Discards Panel (Bottom Left) - Shows last discard overlapping */}
+        {/* Last Discard Panel (Bottom Right) - Shows the most recently discarded tile */}
         <div style={{
           position: 'absolute',
           bottom: '20px',
-          left: '20px',
+          right: '20px',
           zIndex: 1000,
           pointerEvents: 'none'
         }}>
-          {/* Show recent discards from all players, overlapping */}
-          {myGamePlayerId && (gameState.discardPiles[myGamePlayerId] || []).slice(-3).length > 0 && (
-            <div style={{ position: 'relative', width: '60px', height: '90px' }}>
-              {(gameState.discardPiles[myGamePlayerId] || []).slice(-3).map((tile, i) => (
+          {/* Show last 3 tiles from right opponent (previous player) overlapping */}
+          {rightDiscardPile.length > 0 && (
+            <div style={{ position: 'relative', width: '50px', height: '80px' }}>
+              {rightDiscardPile.slice(-3).reverse().map((tile, i) => (
                 <div key={i} style={{
                   position: 'absolute',
-                  bottom: `${i * 12}px`,
-                  left: `${i * 8}px`,
-                  transform: 'scale(0.9)',
-                  zIndex: i
-                }}>
-                  <Tile tile={tile} />
-                </div>
-              ))}
-            </div>
-          )}
-          {topDiscardPile.slice(-3).length > 0 && (
-            <div style={{ position: 'relative', width: '60px', height: '90px', marginTop: '8px' }}>
-              {topDiscardPile.slice(-3).map((tile, i) => (
-                <div key={i} style={{
-                  position: 'absolute',
-                  bottom: `${i * 12}px`,
-                  left: `${i * 8}px`,
-                  transform: 'scale(0.9)',
-                  zIndex: i
-                }}>
-                  <Tile tile={tile} />
-                </div>
-              ))}
-            </div>
-          )}
-          {leftDiscardPile.slice(-3).length > 0 && (
-            <div style={{ position: 'relative', width: '60px', height: '90px', marginTop: '8px' }}>
-              {leftDiscardPile.slice(-3).map((tile, i) => (
-                <div key={i} style={{
-                  position: 'absolute',
-                  bottom: `${i * 12}px`,
-                  left: `${i * 8}px`,
-                  transform: 'scale(0.9)',
-                  zIndex: i
-                }}>
-                  <Tile tile={tile} />
-                </div>
-              ))}
-            </div>
-          )}
-          {rightDiscardPile.slice(-3).length > 0 && (
-            <div style={{ position: 'relative', width: '60px', height: '90px', marginTop: '8px' }}>
-              {rightDiscardPile.slice(-3).map((tile, i) => (
-                <div key={i} style={{
-                  position: 'absolute',
-                  bottom: `${i * 12}px`,
-                  left: `${i * 8}px`,
-                  transform: 'scale(0.9)',
+                  bottom: `${i * 10}px`,
+                  right: `${i * 5}px`,
+                  transform: 'scale(0.85)',
                   zIndex: i
                 }}>
                   <Tile tile={tile} />
@@ -541,7 +471,7 @@ export default function OnlineApp() {
 
         {/* Voting Button (Bottom Right) - Only show with 2+ real players */}
         {roomPlayers.filter(p => !p.isBot).length >= 2 && gameState && (
-          <div style={{ position: 'absolute', bottom: '20px', right: '20px', zIndex: 1000, pointerEvents: 'auto' }}>
+          <div style={{ position: 'absolute', bottom: '20px', right: '140px', zIndex: 1000, pointerEvents: 'auto' }}>
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -640,7 +570,7 @@ export default function OnlineApp() {
             </div>
           </div>
 
-          <div className="side-action-btn" onClick={handleAutoSortPairs}>
+          <div className="side-action-btn" onClick={handleAutoSortPairs} style={{ opacity: isSorting ? 0.5 : 1, cursor: isSorting ? 'wait' : 'pointer' }}>
             <div className="btn-icon">5 5</div>
             ÇİFT<br/>DİZ
           </div>
@@ -652,7 +582,7 @@ export default function OnlineApp() {
             <Rack slots={me.rack} />
           </div>
 
-          <div className="side-action-btn" onClick={handleAutoSort}>
+          <div className="side-action-btn" onClick={handleAutoSort} style={{ opacity: isSorting ? 0.5 : 1, cursor: isSorting ? 'wait' : 'pointer' }}>
             <div className="btn-icon" style={{color:'#0288d1', width:'40px'}}>1 2 3</div>
             SERİ<br/>DİZ
           </div>
