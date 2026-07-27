@@ -208,8 +208,11 @@ function App() {
           }
 
           // 2. Discard logic
-          let discardedTile = getBotDiscardDecision(newRack, newTableMelds);
-          
+          let discardedTile = getBotDiscardDecision(newRack, newTableMelds, {
+            islekCezasi: true,   // Klasik 101 Okey: varsayılan açık
+            okeyCezasi: true     // Klasik 101 Okey: varsayılan açık
+          });
+
           // Remove discarded tile from rack
           const slotIndex = newRack.findIndex(s => s.tile?.id === discardedTile.id);
           if (slotIndex !== -1) {

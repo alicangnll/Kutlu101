@@ -258,17 +258,23 @@ function scheduleBotTurn(roomId: string) {
     }
 
     // Bot plays logic
+    const matchState = {
+      isKatlamali: room.settings.isKatlamali,
+      highestSeriesPoint: s.highestSeriesPoint,
+      highestPairsPoint: s.highestPairsPoint
+    };
     const playResult = playBotLogic(
       botRack,
       s.tableMelds,
-      s.hasOpenedHand[currentId] || false
+      s.hasOpenedHand[currentId] || false,
+      matchState
     );
     s.players[currentId].rack = playResult.newRack;
     s.tableMelds = playResult.newTableMelds;
     if (playResult.hasOpenedNow) s.hasOpenedHand[currentId] = true;
 
     // Bot discards
-    const discardTile = getBotDiscardDecision(s.players[currentId].rack, s.tableMelds);
+    const discardTile = getBotDiscardDecision(s.players[currentId].rack, s.tableMelds, room.settings);
     const discardIdx = s.players[currentId].rack.findIndex((sl: any) => sl.tile?.id === discardTile.id);
     if (discardIdx !== -1) s.players[currentId].rack[discardIdx].tile = null;
 

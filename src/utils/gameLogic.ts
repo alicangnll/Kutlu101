@@ -139,8 +139,8 @@ export function initializeGame(currentRound: number = 1): GameState {
     hasOpenedHand: { player1: false, bot1: false, bot2: false, bot3: false },
     discardPiles,
     tiles: [],
-    highestSeriesPoint: 0,
-    highestPairsPoint: 0,
+    highestSeriesPoint: 100,  // Katlamalı mod: ilk hedef 101 (100 + 1)
+    highestPairsPoint: 4,     // Katlamalı mod: ilk hedef 5 (4 + 1)
     turnStartTime: 0
   };
 }

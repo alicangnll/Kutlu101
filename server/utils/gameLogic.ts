@@ -139,8 +139,8 @@ export function initializeGame(roundNumber: number, existingScores?: Record<stri
     hasOpenedHand: { player1: false, player2: false, player3: false, player4: false },
     discardPiles,
     tiles: [],
-    highestSeriesPoint: 0,
-    highestPairsPoint: 0,
+    highestSeriesPoint: 100,  // Katlamalı mod: ilk hedef 101 (100 + 1)
+    highestPairsPoint: 4,     // Katlamalı mod: ilk hedef 5 (4 + 1)
     turnStartTime: 0,
   };
 }

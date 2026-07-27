@@ -63,23 +63,29 @@ export const playBotLogic = (
 
   // 2. If not opened, sort and check if can open
   if (!openedNow) {
-    // Bot her zaman el açmaz, bazen bekler
-    const shouldOpen = Math.random() < BOT_DIFFICULTY;
+    let sortedRack = autoSortSeries(currentRack);
+    let pointsInfo = calculateRackPoints(sortedRack);
 
-    if (shouldOpen) {
-      let sortedRack = autoSortSeries(currentRack);
-      let pointsInfo = calculateRackPoints(sortedRack);
+    const targetSeries = matchState.isKatlamali ? matchState.highestSeriesPoint + 1 : 101;
+    const targetPairs = matchState.isKatlamali ? matchState.highestPairsPoint + 1 : 5;
 
-      const targetSeries = matchState.isKatlamali ? matchState.highestSeriesPoint + 1 : 101;
-      const targetPairs = matchState.isKatlamali ? matchState.highestPairsPoint + 1 : 5;
-
-      // El açma eşiğini biraz yükselt (daha zor açsınlar)
-      const seriesThreshold = targetSeries + 10; // 10 puan fazla gerektir
-      const pairsThreshold = targetPairs + 1; // 1 çift fazla gerektir
-
-      if (pointsInfo.isValidSeriesOpening && pointsInfo.totalSeriesPoints >= seriesThreshold) {
+    if (pointsInfo.isValidSeriesOpening && pointsInfo.totalSeriesPoints >= targetSeries) {
+      openedNow = true;
+      openedSeries = true;
+      for (const block of pointsInfo.validBlocks) {
+        currentMelds.push(block);
+        for (const tile of block) {
+          const s = sortedRack.find(s => s.tile?.id === tile.id);
+          if (s) s.tile = null;
+        }
+      }
+      currentRack = sortedRack;
+    } else {
+      sortedRack = autoSortPairs(currentRack);
+      pointsInfo = calculateRackPoints(sortedRack);
+      if (pointsInfo.isValidPairsOpening && pointsInfo.totalPairs >= targetPairs) {
         openedNow = true;
-        openedSeries = true;
+        openedPairs = true;
         for (const block of pointsInfo.validBlocks) {
           currentMelds.push(block);
           for (const tile of block) {
@@ -88,21 +94,6 @@ export const playBotLogic = (
           }
         }
         currentRack = sortedRack;
-      } else {
-        sortedRack = autoSortPairs(currentRack);
-        pointsInfo = calculateRackPoints(sortedRack);
-        if (pointsInfo.isValidPairsOpening && pointsInfo.totalPairs >= pairsThreshold) {
-          openedNow = true;
-          openedPairs = true;
-          for (const block of pointsInfo.validBlocks) {
-            currentMelds.push(block);
-            for (const tile of block) {
-              const s = sortedRack.find(s => s.tile?.id === tile.id);
-              if (s) s.tile = null;
-            }
-          }
-          currentRack = sortedRack;
-        }
       }
     }
 
@@ -144,10 +135,26 @@ export const playBotLogic = (
   return { newRack: currentRack, newTableMelds: currentMelds, hasOpenedNow: openedNow, openedSeries, openedPairs };
 };
 
-export const getBotDiscardDecision = (rack: RackSlot[], tableMelds: TileData[][]): TileData => {
+export const getBotDiscardDecision = (
+  rack: RackSlot[],
+  tableMelds: TileData[][],
+  settings: { islekCezasi: boolean; okeyCezasi: boolean }
+): TileData => {
   const occupiedSlots = rack.filter(s => s.tile !== null);
-  const nonIslekSlots = occupiedSlots.filter(s => !isTilePlayable(tableMelds, s.tile!));
-  const pool = nonIslekSlots.length > 0 ? nonIslekSlots : occupiedSlots;
+  let pool = occupiedSlots;
+
+  // İşlek atma cezası varsa, işlek taşları atlamayı dene
+  if (settings.islekCezasi) {
+    const nonIslekSlots = occupiedSlots.filter(s => !isTilePlayable(tableMelds, s.tile!));
+    pool = nonIslekSlots.length > 0 ? nonIslekSlots : occupiedSlots;
+  }
+
+  // Yere Okey atma cezası varsa, Okey taşlarını atlamayı dene
+  if (settings.okeyCezasi) {
+    const nonOkeySlots = pool.filter(s => !s.tile!.isOkey);
+    pool = nonOkeySlots.length > 0 ? nonOkeySlots : pool;
+  }
+
   pool.sort((a, b) => b.tile!.value - a.tile!.value);
   return pool[0].tile!;
 };
