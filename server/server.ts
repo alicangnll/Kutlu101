@@ -81,7 +81,8 @@ function calculateEndRoundScores(state: GameState, winner: string | null, okeyFi
 
   for (const pid in state.players) {
     if (pid === winner) {
-      state.players[pid].score += 0;
+      // Kazanan: sabit 101 puan kazanır
+      state.players[pid].score += 101;
     } else {
       let penalty = 0;
       if (state.hasOpenedHand[pid]) {

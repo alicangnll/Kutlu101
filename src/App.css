@@ -252,7 +252,7 @@
 /* Point Indicator */
 .point-indicator {
   position: absolute;
-  top: -40px;
+  top: -70px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -312,8 +312,8 @@
 
 .table-tile {
   transform: scale(0.85);
-  transform-origin: top left;
-  margin-right: -6px; /* overlapping effect for board */
+  transform-origin: center;
+  margin-right: 2px; /* tiles spaced apart, not overlapping */
 }
 
 /* Open Hand Button */
@@ -326,7 +326,7 @@
 
 .open-hand-btn {
   position: absolute;
-  top: -40px; /* Right above the point indicator */
+  top: -45px; /* Below the point indicator (which is at -70px) */
   z-index: 30;
   background: linear-gradient(to bottom, #00e676, #00c853);
   color: white;

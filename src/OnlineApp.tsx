@@ -345,8 +345,8 @@ export default function OnlineApp() {
 
         {timeLeft <= 10 && gameState.currentPlayerId === myGamePlayerId && (
           <div style={{
-            position: 'absolute', top: '20px', right: '20px',
-            background: 'rgba(255,0,0,0.9)', padding: '15px 25px', borderRadius: '12px', 
+            position: 'absolute', bottom: '20px', left: '20px',
+            background: 'rgba(255,0,0,0.9)', padding: '15px 25px', borderRadius: '12px',
             color: 'white', fontWeight: 'bold', fontSize: '18px', zIndex: 2000,
             boxShadow: '0 0 20px rgba(255,0,0,0.7)',
             animation: 'pulse-red 1s infinite',
@@ -362,8 +362,8 @@ export default function OnlineApp() {
         {timeLeft > 10 && gameState.currentPlayerId === myGamePlayerId && !voteState?.active && (
           <div style={{
             position: 'absolute',
-            top: '20px',
-            right: '20px',
+            bottom: '20px',
+            left: '20px',
             background: 'rgba(0, 150, 136, 0.9)',
             padding: '12px 20px',
             borderRadius: '12px',
@@ -475,35 +475,9 @@ export default function OnlineApp() {
           })}
         </div>
 
-        {/* Last Discard Panel (Bottom Right) - Shows the most recently discarded tile */}
-        <div style={{
-          position: 'absolute',
-          bottom: '20px',
-          right: '20px',
-          zIndex: 1000,
-          pointerEvents: 'none'
-        }}>
-          {/* Show last 3 tiles from right opponent (previous player) overlapping */}
-          {rightDiscardPile.length > 0 && (
-            <div style={{ position: 'relative', width: '50px', height: '80px' }}>
-              {rightDiscardPile.slice(-3).reverse().map((tile, i) => (
-                <div key={i} style={{
-                  position: 'absolute',
-                  bottom: `${i * 10}px`,
-                  right: `${i * 5}px`,
-                  transform: 'scale(0.85)',
-                  zIndex: i
-                }}>
-                  <Tile tile={tile} />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
         {/* Voting Button (Bottom Right) - Only show with 2+ real players */}
         {roomPlayers.filter(p => !p.isBot).length >= 2 && gameState && (
-          <div style={{ position: 'absolute', bottom: '20px', right: '140px', zIndex: 1000, pointerEvents: 'auto' }}>
+          <div style={{ position: 'absolute', bottom: '20px', right: '20px', zIndex: 1000, pointerEvents: 'auto' }}>
             <button
               onClick={(e) => {
                 e.stopPropagation();
