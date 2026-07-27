@@ -138,7 +138,7 @@ export default function OnlineApp() {
 
   // Zaman aşımı: 0 saniye kaldığında otomatik taş at
   useEffect(() => {
-    if (timeLeft === 0 && gameState?.currentPlayerId === myGamePlayerId && !gameState.isRoundOver) {
+    if (timeLeft === 0 && gameState?.currentPlayerId === myGamePlayerId && gameState?.deck.length >= 0) {
       // Otomatik olarak rastgele bir taş at
       const myPlayer = gameState.players[myGamePlayerId as keyof typeof gameState.players];
       if (myPlayer) {
@@ -151,7 +151,7 @@ export default function OnlineApp() {
         }
       }
     }
-  }, [timeLeft, gameState?.currentPlayerId, gameState?.players, gameState?.isRoundOver]);
+  }, [timeLeft, gameState?.currentPlayerId, gameState?.players, gameState?.deck.length]);
 
   useEffect(() => {
     if (!voteState?.active || !voteState.startTime) return;
