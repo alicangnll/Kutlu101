@@ -79,10 +79,26 @@ function findPlayerWithFewestTiles(state: GameState): string | null {
 function calculateEndRoundScores(state: GameState, winner: string | null, okeyFinish: boolean, settings: RoomSettings) {
   const multiplier = (okeyFinish && settings.okeyCezasi) ? 2 : 1;
 
+  // Kazananın çift sayısını hesapla (bonus için)
+  let winnerPairs = 0;
+  if (winner) {
+    const winnerRack = state.players[winner].rack;
+    // Çift sayısını hesapla (iki taş, aynı sayı ve renk)
+    for (let i = 0; i < winnerRack.length - 1; i++) {
+      const t1 = winnerRack[i].tile;
+      const t2 = winnerRack[i + 1].tile;
+      if (t1 && t2 && t1.value === t2.value && t1.color === t2.color && t1.isOkey === t2.isOkey && t1.isFalseOkey === t2.isFalseOkey) {
+        winnerPairs++;
+        i++; // Bir sonraki taşı atla (çift olduğu için)
+      }
+    }
+  }
+
   for (const pid in state.players) {
     if (pid === winner) {
-      // Kazanan: sabit 101 puan kazanır
-      state.players[pid].score += 101;
+      // Kazanan: 101 puan + çift bonusu
+      const bonus = winnerPairs * 10;
+      state.players[pid].score += 101 + bonus;
     } else {
       let penalty = 0;
       if (state.hasOpenedHand[pid]) {
