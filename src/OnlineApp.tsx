@@ -53,6 +53,7 @@ export default function OnlineApp() {
   const [myVote, setMyVote] = useState<'yes' | 'no' | null>(null);
   const [isSorting, setIsSorting] = useState(false);
   const [toastMessage, setToastMessage] = useState<{message: string, type: 'info' | 'warning' | 'error'} | null>(null);
+  const [lastTurnStartTime, setLastTurnStartTime] = useState<number | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -119,6 +120,10 @@ export default function OnlineApp() {
 
   useEffect(() => {
     if (!gameState || !gameState.turnStartTime) return;
+
+    // Sadece turnStartTime gerçekten değiştiyse güncelle (sıralama ile sıfırlanmayı önle)
+    if (lastTurnStartTime === gameState.turnStartTime) return;
+    setLastTurnStartTime(gameState.turnStartTime);
 
     const updateTimer = () => {
       const elapsed = Math.floor((Date.now() - gameState.turnStartTime) / 1000);

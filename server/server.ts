@@ -94,7 +94,8 @@ function calculateEndRoundScores(state: GameState, winner: string | null, okeyFi
       } else {
         penalty = 200;
       }
-      state.players[pid].score += penalty * multiplier;
+      // Kaybedenlere CEZA yazılır (negatif puan)
+      state.players[pid].score -= penalty * multiplier;
     }
   }
 
@@ -116,23 +117,33 @@ function startTurnTimer(roomId: string) {
 
   room.turnTimer = setTimeout(() => {
     const r = rooms[roomId];
-    if (!r || !r.gameState) return;
+    if (!r || !r.gameState) {
+      console.log(`[${new Date().toISOString()}] Timeout fired but room or gameState is null for room ${roomId}`);
+      return;
+    }
     const s = r.gameState;
     const currentId = s.currentPlayerId;
 
+    console.log(`[${new Date().toISOString()}] TIMEOUT fired for room ${roomId}, player ${currentId}, hasDrawn: ${s.hasDrawn}`);
+
     // Is it a bot? bots shouldn't hit this timeout usually, but just in case
     const player = r.players.find(p => p.gamePlayerId === currentId);
-    if (player?.isBot) return;
+    if (player?.isBot) {
+      console.log(`[${new Date().toISOString()}] Timeout but player is bot, skipping auto-play`);
+      return;
+    }
 
     // Auto-draw if hasn't drawn
     if (!s.hasDrawn) {
       const tileCount = s.players[currentId].rack.filter((sl: any) => sl.tile !== null).length;
+      console.log(`[${new Date().toISOString()}] Auto-draw: tileCount=${tileCount}, deckLength=${s.deck.length}`);
       // If deck has tiles, draw first
       if (tileCount < 22 && s.deck.length > 0) {
         const drawnTile = s.deck.pop()!;
         const emptyIdx = s.players[currentId].rack.findIndex((sl: any) => sl.tile === null);
         if (emptyIdx !== -1) s.players[currentId].rack[emptyIdx].tile = drawnTile;
         s.hasDrawn = true;
+        console.log(`[${new Date().toISOString()}] Auto-drew tile: ${drawnTile.color}${drawnTile.value}`);
       }
       // If deck is empty or already has 22 tiles, player can discard directly
     }
@@ -140,16 +151,19 @@ function startTurnTimer(roomId: string) {
     // Auto-discard random tile
     const rack = s.players[currentId].rack;
     const validSlots = rack.filter((sl: any) => sl.tile !== null);
+    console.log(`[${new Date().toISOString()}] Auto-discard: validSlots=${validSlots.length}`);
     if (validSlots.length > 0) {
       const randomSlot = validSlots[Math.floor(Math.random() * validSlots.length)];
       const sourceIndex = rack.findIndex((sl: any) => sl.id === randomSlot.id);
-      
+
       const discardedTile = rack[sourceIndex].tile!;
       rack[sourceIndex].tile = null;
-      
+
       if (!s.discardPiles[currentId]) s.discardPiles[currentId] = [];
       s.discardPiles[currentId].push(discardedTile);
-      
+
+      console.log(`[${new Date().toISOString()}] Auto-discarded tile: ${discardedTile.color}${discardedTile.value}`);
+
       const remainingTiles = rack.filter((sl: any) => sl.tile !== null).length;
       if (remainingTiles === 0) {
         const isGameEnded = calculateEndRoundScores(s, currentId, discardedTile.isOkey, room.settings);
@@ -161,7 +175,9 @@ function startTurnTimer(roomId: string) {
 
     // Pass turn
     const nextIndex = (TURN_ORDER.indexOf(currentId) + 1) % TURN_ORDER.length;
-    s.currentPlayerId = TURN_ORDER[nextIndex];
+    const nextId = TURN_ORDER[nextIndex];
+    console.log(`[${new Date().toISOString()}] Passing turn from ${currentId} to ${nextId}`);
+    s.currentPlayerId = nextId;
     s.hasDrawn = false;
     broadcastState(roomId);
     
