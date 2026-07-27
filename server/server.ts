@@ -53,12 +53,35 @@ function sanitizeState(state: GameState, myGamePlayerId: string): GameState {
   return sanitized;
 }
 
+// Deste bittiğinde en az taşı olan oyuncuyu bul
+function findPlayerWithFewestTiles(state: GameState): string | null {
+  let minTiles = Infinity;
+  let winners: string[] = [];
+
+  for (const pid in state.players) {
+    const tileCount = state.players[pid].rack.filter((s: any) => s.tile !== null).length;
+    if (tileCount < minTiles) {
+      minTiles = tileCount;
+      winners = [pid];
+    } else if (tileCount === minTiles) {
+      winners.push(pid);
+    }
+  }
+
+  // Beraberlik varsa, en az puana sahip olanı seç
+  if (winners.length > 1) {
+    winners.sort((a, b) => state.players[a].score - state.players[b].score);
+  }
+
+  return winners[0];
+}
+
 function calculateEndRoundScores(state: GameState, winner: string | null, okeyFinish: boolean, settings: RoomSettings) {
   const multiplier = (okeyFinish && settings.okeyCezasi) ? 2 : 1;
 
   for (const pid in state.players) {
     if (pid === winner) {
-      state.players[pid].score += 0; 
+      state.players[pid].score += 0;
     } else {
       let penalty = 0;
       if (state.hasOpenedHand[pid]) {
@@ -70,6 +93,7 @@ function calculateEndRoundScores(state: GameState, winner: string | null, okeyFi
       } else {
         penalty = 200;
       }
+      state.players[pid].score += penalty * multiplier;
     }
   }
 
@@ -185,25 +209,12 @@ function scheduleBotTurn(roomId: string) {
     
     if (currentTileCount < 22) {
       if (s.deck.length === 0) {
-        // Deck empty - start next round without penalty
-        console.log(`[${new Date().toISOString()}] Deck empty (bot turn), starting next round`);
-
-        const existingScores: Record<string, number> = {};
-        for (const pid in s.players) {
-          existingScores[pid] = s.players[pid].score;
-        }
-
-        r.gameState = initializeGame(1, existingScores);
-        r.gameState.turnStartTime = Date.now();
+        // Deck empty - find player with fewest tiles and end round
+        console.log(`[${new Date().toISOString()}] Deck empty (bot turn), finding winner...`);
+        const winner = findPlayerWithFewestTiles(s);
+        const isGameEnded = calculateEndRoundScores(s, winner, false, r.settings);
         broadcastState(roomId);
-        io.to(roomId).emit('info', 'Deste bitti! Yeni el başlıyor...');
-
-        const nextPlayer = r.players.find(p => p.gamePlayerId === r.gameState!.currentPlayerId);
-        if (nextPlayer?.isBot) {
-          scheduleBotTurn(roomId);
-        } else {
-          startTurnTimer(roomId);
-        }
+        io.to(roomId).emit('gameFinished', { winner, reason: 'deck_empty', isGameEnded });
         return;
       }
       const drawnTile = s.deck.pop()!;
@@ -447,37 +458,40 @@ io.on('connection', (socket: Socket) => {
         return; // 22 taşı varsa çekemez
       }
       if (state.deck.length === 0) {
-        // Deck empty - start next round without penalty
-        console.log(`[${new Date().toISOString()}] Deck empty in room ${roomId}, starting next round`);
-
-        // Preserve current scores
-        const existingScores: Record<string, number> = {};
-        for (const pid in state.players) {
-          existingScores[pid] = state.players[pid].score;
-        }
-
-        // Start new round with preserved scores
-        room.gameState = initializeGame(1, existingScores);
-        room.gameState.turnStartTime = Date.now();
+        // Deck empty - find player with fewest tiles and end round
+        console.log(`[${new Date().toISOString()}] Deck empty (before draw), finding winner...`);
+        const winner = findPlayerWithFewestTiles(state);
+        const isGameEnded = calculateEndRoundScores(state, winner, false, room.settings);
         broadcastState(roomId);
-
-        // Notify players
-        io.to(roomId).emit('info', 'Deste bitti! Yeni el başlıyor...');
-
-        const nextPlayer = room.players.find(p => p.gamePlayerId === room.gameState!.currentPlayerId);
-        if (nextPlayer?.isBot) {
-          scheduleBotTurn(roomId);
-        } else {
-          startTurnTimer(roomId);
-        }
+        io.to(roomId).emit('gameFinished', { winner, reason: 'deck_empty', isGameEnded });
         return;
       }
       const drawnTile = state.deck.pop();
-      if (!drawnTile) return;
+      if (!drawnTile) {
+        // Deck empty after pop - find player with fewest tiles and end round
+        console.log(`[${new Date().toISOString()}] Deck empty (after pop), finding winner...`);
+        const winner = findPlayerWithFewestTiles(state);
+        const isGameEnded = calculateEndRoundScores(state, winner, false, room.settings);
+        broadcastState(roomId);
+        io.to(roomId).emit('gameFinished', { winner, reason: 'deck_empty', isGameEnded });
+        return;
+      }
       const emptySlotIndex = state.players[myId].rack.findIndex((s: any) => s.tile === null);
       if (emptySlotIndex !== -1) {
         state.players[myId].rack[emptySlotIndex].tile = drawnTile;
         state.hasDrawn = true;
+
+        // Check if deck is now empty after drawing
+        if (state.deck.length === 0) {
+          // Deck empty - find player with fewest tiles and end round
+          console.log(`[${new Date().toISOString()}] Deck empty (after draw), finding winner...`);
+          const winner = findPlayerWithFewestTiles(state);
+          const isGameEnded = calculateEndRoundScores(state, winner, false, room.settings);
+          broadcastState(roomId);
+          io.to(roomId).emit('gameFinished', { winner, reason: 'deck_empty', isGameEnded });
+          return;
+        }
+
         broadcastState(roomId);
       }
     } else if (action === 'DISCARD_TILE') {

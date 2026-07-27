@@ -52,11 +52,17 @@ export default function OnlineApp() {
   const [voteTimeLeft, setVoteTimeLeft] = useState(30);
   const [myVote, setMyVote] = useState<'yes' | 'no' | null>(null);
   const [isSorting, setIsSorting] = useState(false);
+  const [toastMessage, setToastMessage] = useState<{message: string, type: 'info' | 'warning' | 'error'} | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor)
   );
+
+  const showToast = (message: string, type: 'info' | 'warning' | 'error' = 'info') => {
+    setToastMessage({ message, type });
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   useEffect(() => {
     const newSocket = io(SERVER_URL);
@@ -85,7 +91,7 @@ export default function OnlineApp() {
 
     newSocket.on('info', (msg: string) => {
       // Show temporary info message (toast or alert)
-      alert(msg);
+      showToast(msg, 'info');
     });
 
     newSocket.on('roomCreated', (roomId) => {
@@ -104,7 +110,7 @@ export default function OnlineApp() {
     newSocket.on('voteFinished', (data) => {
       setVoteState(null);
       if (!data.ended) {
-        alert('Oylama sonucu: Oyun sonlandırılmadı.');
+        showToast('Oylama sonucu: Oyun sonlandırılmadı.', 'info');
       }
     });
 
@@ -188,7 +194,7 @@ export default function OnlineApp() {
             onClick={() => {
               const inviteLink = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
               navigator.clipboard.writeText(inviteLink);
-              alert('Davetiye linki kopyalandı:\n' + inviteLink);
+              showToast('Davetiye linki kopyalandı!', 'info');
             }}
             style={{width: '100%', padding: '12px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '12px'}}
           >
@@ -245,7 +251,7 @@ export default function OnlineApp() {
 
     if (over.id === 'discard-area') {
       if (!canDiscard) {
-        alert('Lütfen önce ortadan taş çekin!');
+        showToast('Lütfen önce ortadan taş çekin!', 'warning');
         return;
       }
       emitAction('DISCARD_TILE', { tileId: active.id });
@@ -253,7 +259,7 @@ export default function OnlineApp() {
     }
 
     if (typeof over.id === 'string' && over.id.startsWith('table-meld-')) {
-      alert('Masaya işlemek şu an online versiyonda geçici kapalı.');
+      showToast('Masaya işlemek şu an online versiyonda geçici kapalı.', 'warning');
       return;
     }
 
@@ -291,14 +297,14 @@ export default function OnlineApp() {
   const handleOpenHand = () => {
     // Sıra sadece benimdeyken eli açabilirim
     if (gameState.currentPlayerId !== myGamePlayerId) {
-      alert('Sıra sizde değilken eli açamazsınız!');
+      showToast('Sıra sizde değilken eli açamazsınız!', 'warning');
       return;
     }
 
     // Zaten açılmışsa tekrar açmaya izin ver (kalan taşları masaya eklemek için)
     const points = calculateRackPoints(me.rack);
     if (points.validBlocks.length === 0) {
-      alert('Açılacak uygun grup bulunamadı!');
+      showToast('Açılacak uygun grup bulunamadı!', 'warning');
       return;
     }
 
@@ -326,7 +332,7 @@ export default function OnlineApp() {
   const handleStartVote = () => {
     console.log('handleStartVote called', { socket: !!socket, roomId });
     if (!socket || !roomId) {
-      alert('Oylama başlatılamadı: Bağlantı hatası veya oda bulunamadı.');
+      showToast('Oylama başlatılamadı: Bağlantı hatası veya oda bulunamadı.', 'error');
       return;
     }
     console.log('Emitting START_VOTE');
@@ -349,6 +355,29 @@ export default function OnlineApp() {
           }}>
             <div style={{ fontSize: '24px', marginBottom: '8px' }}>⏳ Son {timeLeft} saniye!</div>
             <div style={{ fontSize: '14px', fontWeight: 'normal' }}>Eğer oynamazsanız elinizden bir taş ortaya atılacaktır.</div>
+          </div>
+        )}
+
+        {/* Normal countdown when it's my turn and more than 10 seconds remaining */}
+        {timeLeft > 10 && gameState.currentPlayerId === myGamePlayerId && !voteState?.active && (
+          <div style={{
+            position: 'absolute',
+            top: '20px',
+            right: '20px',
+            background: 'rgba(0, 150, 136, 0.9)',
+            padding: '12px 20px',
+            borderRadius: '12px',
+            color: 'white',
+            fontWeight: 'bold',
+            fontSize: '16px',
+            zIndex: 2000,
+            boxShadow: '0 4px 16px rgba(0, 150, 136, 0.5)',
+            border: '2px solid #4db6ac',
+            textAlign: 'center',
+            pointerEvents: 'none'
+          }}>
+            <div style={{ fontSize: '20px', marginBottom: '4px' }}>⏱️ {timeLeft} saniye</div>
+            <div style={{ fontSize: '12px', fontWeight: 'normal', opacity: 0.9 }}>Sıra sizde</div>
           </div>
         )}
 
@@ -392,7 +421,10 @@ export default function OnlineApp() {
               {(gameFinishedInfo as any).reason === 'deck_empty' ? (
                 <>
                   <p style={{marginBottom: '10px', fontSize: '20px', color: '#ffb300'}}>Ortada Çekilecek Taş Kalmadı!</p>
-                  <p style={{marginBottom: '20px', fontSize: '18px', color: '#ff5252'}}>Herkese 200 ceza puanı yazıldı.</p>
+                  <p style={{marginBottom: '20px', fontSize: '18px', color: '#4caf50'}}>En az taşı olan oyuncu kazandı!</p>
+                  <p style={{marginBottom: '20px', fontSize: '16px'}}>
+                    Kazanan: {gameState.players[gameFinishedInfo.winner as keyof typeof gameState.players]?.name}
+                  </p>
                 </>
               ) : (gameFinishedInfo as any).reason === 'vote_ended' ? (
                 <>
@@ -415,7 +447,7 @@ export default function OnlineApp() {
                     emitAction('START_NEXT_ROUND');
                     setGameFinishedInfo(null);
                   } else {
-                    alert('Kurucunun yeni eli başlatması bekleniyor...');
+                    showToast('Kurucunun yeni eli başlatması bekleniyor...', 'info');
                   }
                 }}>
                   {roomPlayers[0]?.gamePlayerId === myGamePlayerId ? 'Sıradaki Ele Geç' : 'Kurucuyu Bekle'}
@@ -501,7 +533,46 @@ export default function OnlineApp() {
         )}
 
         {gameState.currentPlayerId !== myGamePlayerId && (
-          <div className="turn-overlay">Rakiplerin Hamlesi Bekleniyor...</div>
+          <div style={{
+            position: 'absolute',
+            top: '360px',
+            right: '60px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.85)',
+              color: '#ffeb3b',
+              padding: '8px 16px',
+              borderRadius: '16px',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              zIndex: 100,
+              border: '2px solid #fbc02d',
+              boxShadow: '0 6px 20px rgba(0,0,0,0.6)',
+              pointerEvents: 'none',
+              whiteSpace: 'nowrap'
+            }}>
+              Rakiplerin Hamlesi Bekleniyor...
+            </div>
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.15)',
+              color: '#fff',
+              padding: '6px 12px',
+              borderRadius: '12px',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              zIndex: 100,
+              border: '1px solid rgba(255, 255, 255, 0.3)',
+              pointerEvents: 'none',
+              minWidth: '60px',
+              textAlign: 'center'
+            }}>
+              ⏱️ {timeLeft}s
+            </div>
+          </div>
         )}
 
         <div className="main-area">
@@ -540,6 +611,27 @@ export default function OnlineApp() {
               <div className="deck-count">{gameState.deck.length}</div>
               <div style={{ fontSize: '12px', lineHeight: '1' }}>DESTE<br/>ÇEK</div>
             </div>
+
+            {/* Toast Messages */}
+            {toastMessage && (
+              <div style={{
+                marginTop: '12px',
+                background: toastMessage.type === 'error' ? 'rgba(244, 67, 54, 0.9)' :
+                           toastMessage.type === 'warning' ? 'rgba(255, 152, 0, 0.9)' :
+                           'rgba(33, 150, 243, 0.9)',
+                color: 'white',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                fontSize: '11px',
+                fontWeight: 'bold',
+                textAlign: 'center',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                border: '1px solid rgba(255,255,255,0.3)',
+                animation: 'slideIn 0.3s ease-out'
+              }}>
+                {toastMessage.message}
+              </div>
+            )}
           </div>
         </div>
 
