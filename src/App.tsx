@@ -72,14 +72,6 @@ function App() {
     setGameState(initializeGame(1));
   }, []);
 
-  // End of Round check
-  useEffect(() => {
-    if (gameState && gameState.deck.length === 0 && !matchState.isRoundOver) {
-      handleEndRound();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState?.deck.length]);
-
   const handleEndRound = (winnerId?: string, isOkeyFinish?: boolean) => {
     if (!gameState) return;
     
@@ -139,11 +131,17 @@ function App() {
   // Bot Turn Logic
   useEffect(() => {
     if (!gameState || matchState.isRoundOver) return;
-    if (gameState.currentPlayerId === 'player1') return; 
+    if (gameState.currentPlayerId === 'player1') return;
 
     const botId = gameState.currentPlayerId;
-    
+
     const drawTimer = setTimeout(() => {
+      // Deste bittiyse tur biter
+      if (gameState.deck.length === 0) {
+        handleEndRound();
+        return;
+      }
+
       setGameState((prev) => {
         if (!prev || prev.deck.length === 0) return prev; 
         const newDeck = [...prev.deck];
@@ -177,7 +175,8 @@ function App() {
       setTimeout(() => {
         let discardedTileInfo: any = null;
         setGameState((prev) => {
-          if (!prev || prev.deck.length === 0) return prev;
+          if (!prev) return prev;
+          // Note: Don't check deck.length === 0 here - bot should still discard even if deck is empty
           const currentBotId = prev.currentPlayerId;
           const newPlayers = { ...prev.players };
           const botState = { ...newPlayers[currentBotId as keyof typeof newPlayers] };
@@ -222,7 +221,7 @@ function App() {
           const remainingTiles = newRack.filter(s => s.tile !== null).length;
           const isFinished = remainingTiles === 0;
           const finishedWithOkey = isFinished && discardedTile.isOkey;
-          
+
           discardedTileInfo = { tile: discardedTile, botId: currentBotId, melds: newTableMelds, finishedWithOkey, isFinished };
           
           botState.rack = newRack;
@@ -249,7 +248,7 @@ function App() {
             const botName = { bot1: 'Bot 1', bot2: 'Bot 2', bot3: 'Bot 3' }[discardedTileInfo.botId as string];
             applyPenalty(discardedTileInfo.botId, 101, `${botName} İşlek Attı! +101 Ceza`);
           }
-          
+
           if (discardedTileInfo.isFinished) {
             handleEndRound(discardedTileInfo.botId, discardedTileInfo.finishedWithOkey);
           }
@@ -265,13 +264,16 @@ function App() {
     if (!gameState || matchState.isRoundOver) return;
     if (gameState.currentPlayerId !== 'player1') return;
     if (gameState.hasDrawn) return;
-    if (gameState.deck.length === 0) return;
 
     setGameState((prev) => {
       if (!prev) return prev;
       const newDeck = [...prev.deck];
       const drawnTile = newDeck.pop();
-      if (!drawnTile) return prev;
+      if (!drawnTile) {
+        // Deck empty - time to end the round
+        handleEndRound();
+        return prev;
+      }
 
       const p1Rack = [...prev.players.player1.rack];
       const p1TileCount = p1Rack.filter(s => s.tile !== null).length;
@@ -361,7 +363,7 @@ function App() {
 
       if (islekPenaltyInfo) applyPenalty('player1', 101, islekPenaltyInfo);
       if (okeyPenaltyInfo) applyPenalty('player1', 101, okeyPenaltyInfo);
-      
+
       if (isFinished) {
         handleEndRound('player1', finishedWithOkey);
       }

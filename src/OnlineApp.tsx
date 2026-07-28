@@ -47,7 +47,8 @@ export default function OnlineApp() {
   const [activeTile, setActiveTile] = useState<TileData | null>(null);
   const [gameFinishedInfo, setGameFinishedInfo] = useState<{winner: string | null, okeyFinish?: boolean, reason?: string, isGameEnded?: boolean} | null>(null);
   const [roomSettings, setRoomSettings] = useState<{isKatlamali: boolean, maxScore: number, islekCezasi: boolean, okeyCezasi: boolean}>({isKatlamali: false, maxScore: 800, islekCezasi: true, okeyCezasi: true});
-  
+  const [scores, setScores] = useState<Record<string, number>>({ player1: 0, bot1: 0, bot2: 0, bot3: 0 });
+
   const [timeLeft, setTimeLeft] = useState(30);
   const [voteState, setVoteState] = useState<{active: boolean, yes: number, no: number, startTime: number} | null>(null);
   const [voteTimeLeft, setVoteTimeLeft] = useState(30);
@@ -112,6 +113,7 @@ export default function OnlineApp() {
     newSocket.on('penalty', (data: { playerId: string, penalty: number, reason: string }) => {
       const playerName = gameState?.players[data.playerId as keyof typeof gameState.players]?.name || 'Bir oyuncu';
       showToast(`${playerName}: ${data.reason} +${data.penalty}`, 'error');
+      setScores(prev => ({ ...prev, [data.playerId]: prev[data.playerId] + data.penalty }));
     });
 
     newSocket.on('voteFinished', (data) => {
@@ -490,14 +492,13 @@ export default function OnlineApp() {
         <div className="scoreboard-panel">
           <div className="scoreboard-title">Puan Tablosu</div>
           {roomPlayers.map(p => {
-            const playerState = gameState.players[p.gamePlayerId as keyof typeof gameState.players];
-            const score = playerState ? playerState.score : 0;
+            const score = scores[p.gamePlayerId] || 0;
             const isActive = gameState.currentPlayerId === p.gamePlayerId;
             return (
               <div key={p.gamePlayerId} className="scoreboard-row" style={{color: isActive ? '#ffd700' : 'white', fontWeight: isActive ? 'bold' : 'normal'}}>
                 <span>{p.username.substring(0, 10)}{p.gamePlayerId === myGamePlayerId ? ' 🙋' : ''}</span>
-                <span style={{ color: score > 0 ? '#ff5252' : score < 0 ? '#4caf50' : 'white' }}>
-                  {score > 0 ? `+${score}` : score} Puan
+                <span style={{ color: score > 0 ? '#ff5252' : 'white' }}>
+                  {score}
                 </span>
               </div>
             );

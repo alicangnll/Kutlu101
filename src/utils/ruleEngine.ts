@@ -17,10 +17,10 @@ export interface RackPointsResult {
 
 export const getRackBlocks = (rack: RackSlot[]): TileData[][] => {
   const blocks: TileData[][] = [];
-  
+
   const extractBlocksFromRow = (rowSlots: RackSlot[]) => {
     let currentBlock: TileData[] = [];
-    
+
     for (const slot of rowSlots) {
       if (slot.tile !== null) {
         currentBlock.push(slot.tile);
@@ -42,13 +42,21 @@ export const getRackBlocks = (rack: RackSlot[]): TileData[][] => {
   return blocks;
 };
 
+/**
+ * Okey 101 kurallarına göre blok validasyonu
+ * Seri: 3+ taş, aynı renk, ardışık sayılar. Puan = ortası + yan taşlar/3
+ * Grup: 3-4 taş, aynı sayı, farklı renkler. Puan = ortası + yan taşlar/3
+ * Çift: 2 taş, aynı sayı, aynı renk. Puan = 0
+ */
 export const validateBlock = (block: TileData[]): BlockValidationResult => {
   if (block.length < 2) return { isValid: false, type: 'invalid', points: 0 };
 
+  // Çift kontrolü (2 taş)
   if (block.length === 2) {
     const [t1, t2] = block;
     let isPair = false;
     if (t1.isOkey || t2.isOkey) {
+        // Okey herhangi bir çift yerine geçebilir
         isPair = true;
     } else if (t1.value === t2.value && t1.color === t2.color && t1.isFalseOkey === t2.isFalseOkey) {
         isPair = true;
@@ -64,68 +72,123 @@ export const validateBlock = (block: TileData[]): BlockValidationResult => {
   const anchorVal = anchorTile.value;
   const anchorColor = anchorTile.color;
 
+  // Grup kontrolü (aynı sayı, farklı renkler, 3-4 taş)
   let isGroup = true;
-  let groupPoints = 0;
-  const usedColors = new Set<string>();
-
-  if (block.length > 4) {
+  if (block.length > 4 || block.length < 3) {
     isGroup = false;
   } else {
+    const usedColors = new Set<string>();
     for (const t of block) {
       if (t.isOkey) {
-         groupPoints += anchorVal;
+        // Okey herhangi bir renkte olabilir
+        continue;
       } else {
-         if (t.value !== anchorVal) {
-            isGroup = false;
-            break;
-         }
-         if (usedColors.has(t.color)) {
-            isGroup = false;
-            break;
-         }
-         usedColors.add(t.color);
-         groupPoints += t.value;
+        if (t.value !== anchorVal) {
+           isGroup = false;
+           break;
+        }
+        if (usedColors.has(t.color)) {
+          isGroup = false;
+          break;
+        }
+        usedColors.add(t.color);
       }
     }
   }
 
+  // Seri kontrolü (aynı renk, ardışık sayılar, 3+ taş)
   let isRun = true;
-  let runPoints = 0;
-  
-  if (!isGroup) {
-      for (let j = 0; j < block.length; j++) {
-        const t = block[j];
-        let expectedVal = anchorVal + (j - anchorIdx);
-        
-        if (expectedVal === 14) expectedVal = 1;
-        if (expectedVal > 14 || expectedVal < 1) {
-            isRun = false;
-            break;
-        }
-
-        if (t.isOkey) {
-            runPoints += expectedVal;
-        } else {
-            if (t.color !== anchorColor || t.value !== expectedVal) {
-                isRun = false;
-                break;
-            }
-            runPoints += t.value;
-        }
-      }
+  if (block.length < 3) {
+    isRun = false;
   } else {
-      isRun = false;
+    for (let j = 0; j < block.length; j++) {
+      const t = block[j];
+      // Her taştan anchorIdx kadar uzaklık ekleyerek expected değer hesapla
+      let expectedVal = anchorVal + (j - anchorIdx);
+
+      // 13'den sonra 1'e döner (13-1-2 serisi gibi)
+      if (expectedVal === 14) expectedVal = 1;
+      if (expectedVal === 0) expectedVal = 13;
+
+      if (expectedVal > 14 || expectedVal < 1) {
+          isRun = false;
+          break;
+      }
+
+      if (t.isOkey) {
+          // Okey yerine geçeceği taşın değerini alır
+          continue;
+      } else {
+          if (t.color !== anchorColor || t.value !== expectedVal) {
+              isRun = false;
+              break;
+          }
+      }
+    }
   }
 
-  if (isGroup) return { isValid: true, type: 'group', points: groupPoints };
-  if (isRun) return { isValid: true, type: 'run', points: runPoints };
+  // Puan hesaplama (Okey 101 kuralı: ortası + yan taşlar/3)
+  let points = 0;
+
+  if (isGroup) {
+    // Grup: ortası + yan taşlar/3
+    const middleIdx = Math.floor(block.length / 2);
+    const middleTile = block[middleIdx];
+    const middleVal = middleTile.isOkey ? anchorVal : middleTile.value;
+
+    points = middleVal;
+    // Yan taşların toplamı / 3
+    for (let i = 0; i < block.length; i++) {
+      if (i === middleIdx) continue;
+      const t = block[i];
+      const val = t.isOkey ? anchorVal : t.value;
+      points += Math.floor(val / 3);
+    }
+    return { isValid: true, type: 'group', points };
+  }
+
+  if (isRun) {
+    // Seri: ortası + yan taşlar/3
+    const middleIdx = Math.floor(block.length / 2);
+    const middleTile = block[middleIdx];
+
+    // Ortadaki taşın değeri (Okey ise anchorVal, değilse kendi değeri)
+    let middleVal: number;
+    if (middleTile.isOkey) {
+      // Okey'in yerine geçeceği değer
+      let expectedVal = anchorVal + (middleIdx - anchorIdx);
+      if (expectedVal === 14) expectedVal = 1;
+      if (expectedVal === 0) expectedVal = 13;
+      middleVal = expectedVal;
+    } else {
+      middleVal = middleTile.value;
+    }
+
+    points = middleVal;
+    // Yan taşların toplamı / 3
+    for (let i = 0; i < block.length; i++) {
+      if (i === middleIdx) continue;
+      const t = block[i];
+      let val: number;
+      if (t.isOkey) {
+        let expectedVal = anchorVal + (i - anchorIdx);
+        if (expectedVal === 14) expectedVal = 1;
+        if (expectedVal === 0) expectedVal = 13;
+        val = expectedVal;
+      } else {
+        val = t.value;
+      }
+      points += Math.floor(val / 3);
+    }
+    return { isValid: true, type: 'run', points };
+  }
 
   return { isValid: false, type: 'invalid', points: 0 };
 };
 
 export const calculateRackPoints = (rack: RackSlot[]): RackPointsResult => {
   const blocks = getRackBlocks(rack);
-  
+
   let totalSeriesPoints = 0;
   let totalPairs = 0;
   const validBlocks: TileData[][] = [];
@@ -160,7 +223,7 @@ export const calculateRackPoints = (rack: RackSlot[]): RackPointsResult => {
  * Returns the valid insert position ('start', 'end', 'any') or 'invalid'.
  */
 export const canAppendToMeld = (meld: TileData[], tile: TileData): { valid: boolean, position: 'start' | 'end' | 'any' | 'invalid' } => {
-  if (meld.length < 2) return { valid: false, position: 'invalid' }; 
+  if (meld.length < 2) return { valid: false, position: 'invalid' };
 
   const res = validateBlock(meld);
 

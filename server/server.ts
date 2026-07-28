@@ -31,6 +31,7 @@ interface Room {
   id: string;
   players: RoomPlayer[];
   gameState: GameState | null;
+  scores: Record<string, number>;
   botTimers: ReturnType<typeof setTimeout>[];
   turnTimer: ReturnType<typeof setTimeout> | null;
   settings: RoomSettings;
@@ -229,7 +230,6 @@ function scheduleBotTurn(roomId: string) {
   const currentPlayer = room.players.find(p => p.gamePlayerId === currentId);
 
   if (!currentPlayer || !currentPlayer.isBot) return;
-  if (state.deck.length === 0) return;
 
   const timer = setTimeout(() => {
     const r = rooms[roomId];
@@ -237,21 +237,32 @@ function scheduleBotTurn(roomId: string) {
     const s = r.gameState;
     if (s.currentPlayerId !== currentId) return;
 
+    // Check if deck is empty at the start of bot's turn
+    if (s.deck.length === 0) {
+      // Deck empty - time to end the round
+      console.log(`[${new Date().toISOString()}] Deck empty on ${currentId}'s turn, finding winner...`);
+      const winner = findPlayerWithFewestTiles(s);
+      const isGameEnded = calculateEndRoundScores(s, winner, false, r.settings);
+      broadcastState(roomId);
+      io.to(roomId).emit('gameFinished', { winner, reason: 'deck_empty', isGameEnded });
+      return;
+    }
+
     // Bot draws a tile if needed
     const botRack = s.players[currentId].rack;
     const currentTileCount = botRack.filter((sl: any) => sl.tile !== null).length;
     
     if (currentTileCount < 22) {
-      if (s.deck.length === 0) {
-        // Deck empty - find player with fewest tiles and end round
-        console.log(`[${new Date().toISOString()}] Deck empty (bot turn), finding winner...`);
+      const drawnTile = s.deck.pop();
+      if (!drawnTile) {
+        // Deck empty - time to end the round
+        console.log(`[${new Date().toISOString()}] Deck empty on ${currentId}'s turn, finding winner...`);
         const winner = findPlayerWithFewestTiles(s);
         const isGameEnded = calculateEndRoundScores(s, winner, false, r.settings);
         broadcastState(roomId);
         io.to(roomId).emit('gameFinished', { winner, reason: 'deck_empty', isGameEnded });
         return;
       }
-      const drawnTile = s.deck.pop()!;
       const emptyIdx = botRack.findIndex((sl: any) => sl.tile === null);
       if (emptyIdx !== -1) botRack[emptyIdx].tile = drawnTile;
       s.hasDrawn = true;
@@ -376,6 +387,7 @@ io.on('connection', (socket: Socket) => {
       id: roomId,
       players: [],
       gameState: null,
+      scores: { player1: 0, bot1: 0, bot2: 0, bot3: 0 },
       botTimers: [],
       turnTimer: null,
       settings: settings || { isKatlamali: false, islekCezasi: false, okeyCezasi: false, maxScore: 800 },
@@ -508,19 +520,10 @@ io.on('connection', (socket: Socket) => {
         console.log(`[${new Date().toISOString()}] DRAW_DECK rejected - tileCount >= 22`);
         return; // 22 taşı varsa çekemez
       }
-      if (state.deck.length === 0) {
-        // Deck empty - find player with fewest tiles and end round
-        console.log(`[${new Date().toISOString()}] Deck empty (before draw), finding winner...`);
-        const winner = findPlayerWithFewestTiles(state);
-        const isGameEnded = calculateEndRoundScores(state, winner, false, room.settings);
-        broadcastState(roomId);
-        io.to(roomId).emit('gameFinished', { winner, reason: 'deck_empty', isGameEnded });
-        return;
-      }
       const drawnTile = state.deck.pop();
       if (!drawnTile) {
-        // Deck empty after pop - find player with fewest tiles and end round
-        console.log(`[${new Date().toISOString()}] Deck empty (after pop), finding winner...`);
+        // Deck empty - time to end the round
+        console.log(`[${new Date().toISOString()}] Deck empty on ${myId}'s turn, finding winner...`);
         const winner = findPlayerWithFewestTiles(state);
         const isGameEnded = calculateEndRoundScores(state, winner, false, room.settings);
         broadcastState(roomId);
@@ -531,17 +534,6 @@ io.on('connection', (socket: Socket) => {
       if (emptySlotIndex !== -1) {
         state.players[myId].rack[emptySlotIndex].tile = drawnTile;
         state.hasDrawn = true;
-
-        // Check if deck is now empty after drawing
-        if (state.deck.length === 0) {
-          // Deck empty - find player with fewest tiles and end round
-          console.log(`[${new Date().toISOString()}] Deck empty (after draw), finding winner...`);
-          const winner = findPlayerWithFewestTiles(state);
-          const isGameEnded = calculateEndRoundScores(state, winner, false, room.settings);
-          broadcastState(roomId);
-          io.to(roomId).emit('gameFinished', { winner, reason: 'deck_empty', isGameEnded });
-          return;
-        }
 
         broadcastState(roomId);
       }
@@ -556,12 +548,12 @@ io.on('connection', (socket: Socket) => {
 
       // İşlek atma cezası kontrolü (ayara göre)
       if (room.settings.islekCezasi && isTilePlayable(state.tableMelds, discardedTile)) {
-        state.scores[myId] += 101;
+        room.scores[myId] += 101;
         io.to(roomId).emit('penalty', { playerId: myId, penalty: 101, reason: 'İşlek Attı!' });
       }
       // Yere Okey atma cezası (ayara göre)
       if (room.settings.okeyCezasi && discardedTile.isOkey) {
-        state.scores[myId] += 101;
+        room.scores[myId] += 101;
         io.to(roomId).emit('penalty', { playerId: myId, penalty: 101, reason: 'Okey Attı!' });
       }
 
